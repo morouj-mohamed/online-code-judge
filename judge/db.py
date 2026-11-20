@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     time_ms      INTEGER,                    -- slowest test
     memory_kb    INTEGER,                    -- biggest test
     worker_id    INTEGER,
+    session_id   TEXT,                       -- anonymous browser session that submitted it
     created_at   REAL    NOT NULL,
     started_at   REAL,
     finished_at  REAL
@@ -112,6 +113,18 @@ class Database:
             self._conn.execute("PRAGMA synchronous = NORMAL")
             self._conn.execute("PRAGMA busy_timeout = 5000")
             self._conn.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self):
+        """
+        Bring a database created by an older phase up to date. SQLite cannot
+        add a column with "IF NOT EXISTS", so we look at the table first.
+        """
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(submissions)")}
+        if "session_id" not in columns:
+            self._conn.execute("ALTER TABLE submissions ADD COLUMN session_id TEXT")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_submissions_session ON submissions(session_id, id)")
 
     # ------------------------------------------------------------------ plumbing
     @contextlib.contextmanager
@@ -142,14 +155,25 @@ class Database:
             self._conn.close()
 
     # ---------------------------------------------------------------- submissions
-    def create_submission(self, problem_slug, language, source):
+    def create_submission(self, problem_slug, language, source, session_id=None):
         """Insert a new submission in the Pending state and return its id."""
         with self._tx() as c:
             cur = c.execute(
-                "INSERT INTO submissions (problem_slug, language, source, status, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (problem_slug, language, source, config.PENDING, time.time()))
+                "INSERT INTO submissions (problem_slug, language, source, status, session_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (problem_slug, language, source, config.PENDING, session_id, time.time()))
             return cur.lastrowid
+
+    def discard_pending(self, submission_id):
+        """
+        Delete a submission that never got into the queue (the queue was full).
+        Only a Pending row can be discarded; its events go too (ON DELETE CASCADE).
+        Returns True if a row was deleted.
+        """
+        with self._tx() as c:
+            cur = c.execute("DELETE FROM submissions WHERE id = ? AND status = ?",
+                            (submission_id, config.PENDING))
+            return cur.rowcount == 1
 
     def claim(self, submission_id, worker_id):
         """
@@ -197,11 +221,24 @@ class Database:
     def get_submission(self, submission_id):
         return self._one("SELECT * FROM submissions WHERE id = ?", (submission_id,))
 
-    def list_submissions(self, status=None, limit=100):
-        if status is None:
-            return self._all("SELECT * FROM submissions ORDER BY id DESC LIMIT ?", (limit,))
-        return self._all("SELECT * FROM submissions WHERE status = ? ORDER BY id DESC LIMIT ?",
-                         (status, limit))
+    def list_submissions(self, status=None, limit=100, session_id=None):
+        """Newest first, optionally only one status and/or one browser session."""
+        where, params = [], []
+        if status is not None:
+            where.append("status = ?")
+            params.append(status)
+        if session_id is not None:
+            where.append("session_id = ?")
+            params.append(session_id)
+        sql = "SELECT * FROM submissions"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        return self._all(sql + " ORDER BY id DESC LIMIT ?", (*params, limit))
+
+    def get_session_of(self, submission_id):
+        """The session id that owns a submission (None if unknown or no owner)."""
+        row = self._one("SELECT session_id FROM submissions WHERE id = ?", (submission_id,))
+        return row["session_id"] if row else None
 
     def count_by_status(self):
         rows = self._all("SELECT status, COUNT(*) AS n FROM submissions GROUP BY status")

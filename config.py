@@ -157,3 +157,53 @@ WORKERS = int(os.environ.get("JUDGE_WORKERS", "3"))          # number of worker 
 QUEUE_CAPACITY = int(os.environ.get("JUDGE_QUEUE_CAPACITY", "100"))  # max waiting submissions
 EVENT_HISTORY = 5000          # how many recent events the broker remembers for late subscribers
 SUBSCRIBER_BUFFER = 2000      # per-subscriber buffer; the oldest events are dropped when it is full
+
+# ----------------------------------------------------------------------------
+# Phase 3: the web API (app.py)
+# ----------------------------------------------------------------------------
+# Inside Docker the server must listen on 0.0.0.0 to be reachable from the
+# host; on a laptop 127.0.0.1 (this machine only) is the safe default.
+HOST = os.environ.get("JUDGE_HOST", "127.0.0.1")
+PORT = int(os.environ.get("JUDGE_PORT", "5000"))
+
+# Request validation
+MAX_CODE_BYTES = 64 * 1024                 # source code limit (UTF-8 bytes)
+MAX_REQUEST_BYTES = MAX_CODE_BYTES + 16 * 1024  # whole JSON body (code + JSON overhead)
+
+# Anonymous session: a random id in a cookie, no login. It decides which
+# submissions "belong" to a browser, and it is the key for the rate limit.
+SESSION_COOKIE = "ocj_session"
+SESSION_COOKIE_MAX_AGE_S = 365 * 24 * 3600
+# Send the cookie only over HTTPS. Off by default because the dev server is
+# plain HTTP; turn it on behind an HTTPS proxy.
+SESSION_COOKIE_SECURE = os.environ.get("JUDGE_COOKIE_SECURE", "0") == "1"
+
+# Rate limits: (max requests, window in seconds), counted per session and,
+# because a client can simply throw its cookie away, also per IP address
+# with a larger budget.
+RATE_LIMITS = {
+    "submit":     {"session": (10, 60), "ip": (40, 60)},
+    "run_sample": {"session": (20, 60), "ip": (60, 60)},
+    "stress":     {"session": (1, 60),  "ip": (3, 60)},
+}
+
+# How long POST /api/submit waits for a free place in a full queue before it
+# answers 503 "queue full" (a short back-pressure wait, then give up).
+SUBMIT_QUEUE_WAIT_S = 2.0
+
+# "Run sample" is synchronous and does not use the queue. It gets its own
+# sandbox uids (slots WORKERS .. WORKERS + SAMPLE_RUNNERS - 1) so it never
+# shares a process quota with a queue worker. At most this many run at once.
+SAMPLE_RUNNERS = int(os.environ.get("JUDGE_SAMPLE_RUNNERS", "2"))
+SAMPLE_WAIT_S = 10.0                       # wait this long for a free runner, then 503
+
+# Server-Sent Events: a comment line is sent this often so that proxies keep
+# the connection open and a closed browser tab is noticed (the write fails).
+SSE_HEARTBEAT_S = 15.0
+SSE_RETRY_MS = 2000                        # how long the browser waits before reconnecting
+
+SUBMISSIONS_PAGE_MAX = 100                 # GET /api/submissions?limit=... upper bound
+STRESS_SUBMISSIONS = 20                    # POST /api/inspector/stress fires this many
+
+# Graceful shutdown: how long running submissions may take to finish.
+SHUTDOWN_TIMEOUT_S = 30.0

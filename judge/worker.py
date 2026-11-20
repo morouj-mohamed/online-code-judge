@@ -79,19 +79,27 @@ class WorkerPool:
         return len(recovered)
 
     # ----------------------------------------------------------------- producers
-    def submit(self, problem_slug, language, source, block=True, timeout=None):
+    def submit(self, problem_slug, language, source, block=True, timeout=None, session_id=None):
         """
         Create a submission and queue it. Returns its id.
 
         Blocks while the queue is full (back-pressure: producers are slowed down
-        instead of memory growing). With block=False it raises jqueue.Full
-        immediately, which a web server can turn into "try again later".
+        instead of memory growing). With block=False (or when `timeout` passes)
+        it raises jqueue.Full, which a web server turns into "try again later".
+        In that case the row is deleted again, so a refused submission does not
+        stay behind as a Pending row that nobody will ever judge.
         """
         if self._closing:
             raise PoolClosed("the pool is shutting down")
-        sid = self.db.create_submission(problem_slug, language, source)
+        sid = self.db.create_submission(problem_slug, language, source, session_id=session_id)
         self._publish_status(sid, config.PENDING)       # before queueing: the worker
-        self._enqueue(sid, block, timeout)               # may start at once
+        try:                                             # may start at once
+            self._enqueue(sid, block, timeout)
+        except (jqueue.Full, PoolClosed):
+            self.db.discard_pending(sid)
+            self.broker.publish("submission", {"status": "rejected",
+                                               "reason": "queue full or shutting down"}, sid)
+            raise
         return sid
 
     def enqueue_existing(self, sid, block=True, timeout=None):
