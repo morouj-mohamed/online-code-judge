@@ -1,0 +1,14 @@
+# Keep Unix line endings (LF) for every text file, even on Windows.
+# Without this, Git on Windows may turn "\n" into "\r\n" on checkout. Inside the
+# Linux container that extra "\r" would end up in test inputs/outputs, source
+# files and shell commands, and give wrong verdicts or strange errors.
+* text=auto eol=lf
+*.in  text eol=lf
+*.out text eol=lf
+*.py  text eol=lf
+*.c   text eol=lf
+*.cpp text eol=lf
+*.md  text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+Dockerfile text eol=lf
