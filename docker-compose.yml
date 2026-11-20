@@ -1,0 +1,48 @@
+# Development container for the Online Code Judge.
+#
+#   docker compose build
+#   docker compose run --rm judge python3 tools/run_verdict_tests.py
+#
+# The container runs as root on purpose: chroot() and setuid() need it. To keep
+# that safe we drop EVERY Linux capability and add back only the seven the judge
+# really uses (verified by running the whole test suite with exactly this set).
+services:
+  judge:
+    build: .
+    image: online-code-judge-dev
+    working_dir: /app
+    volumes:
+      - .:/app                 # edit on the host, run in the container
+
+    # PID 1 inside a container is responsible for reaping orphaned processes.
+    # "init: true" puts a tiny init program (tini) there, so killed descendants
+    # of user programs never stay behind as zombies.
+    init: true
+
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_CHROOT             # chroot(): hide the real file system from user code
+      - SETUID                 # setresuid(): run user code as an unprivileged user
+      - SETGID                 # setresgid() / setgroups()
+      - KILL                   # kill the process group of a different user id
+      - CHOWN                  # give the build and work folders to that user
+      - DAC_OVERRIDE           # delete files the sandbox user created (mode 0700)
+      - FOWNER                 # chmod folders before deleting them
+    security_opt:
+      - no-new-privileges:true # nothing started in here can gain more rights
+
+    # Second line of defence behind RLIMIT_NPROC and the process-group kill:
+    # the whole container may never hold more than this many processes.
+    pids_limit: 512
+    mem_limit: 2g
+
+    # Every submission is built and run under /tmp. A tmpfs keeps it in RAM and
+    # empty at every start. "exec" is needed: tmpfs is mounted noexec by default
+    # and we must be able to run the compiled programs from there.
+    tmpfs:
+      - /tmp:exec,mode=1777,size=1g
+
+    stdin_open: true
+    tty: true
+    command: bash

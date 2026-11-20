@@ -1,0 +1,28 @@
+# Development environment for the Online Code Judge.
+#
+# It contains everything the judge needs to run real code:
+#   gcc, g++        compile C and C++ (we link statically, see config.py)
+#   libc6-dev       provides libc.a, the static C library that "-static" needs
+#   python3         runs the judge itself AND is one of the judged languages
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gcc g++ libc6-dev python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+# The unprivileged account that user code runs as after the judge drops root.
+# The numbers must match SANDBOX_UID / SANDBOX_GID in config.py.
+# It has no home directory and no login shell.
+RUN groupadd --gid 20000 sandbox \
+ && useradd --uid 20000 --gid 20000 --no-create-home --shell /usr/sbin/nologin sandbox
+
+WORKDIR /app
+COPY . /app
+
+# The judge starts as root (it needs chroot and setuid) and gives root up in
+# every child before the user's program runs.
+CMD ["bash"]

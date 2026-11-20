@@ -1,0 +1,6 @@
+{
+  "slug": "reverse-string",
+  "title": "Reverse a String",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}
