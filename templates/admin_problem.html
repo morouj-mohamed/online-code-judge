@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit ' ~ slug if slug else 'New problem' }} · Admin · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="admin-problem" data-slug="{{ slug }}">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/admin"><span data-icon="arrow-left" data-size="14"></span>All problems</a></nav>
+      <h1 class="js-heading">{{ 'Edit problem' if slug else 'New problem' }}</h1>
+      <div class="row-wrap js-badges"></div>
+    </div>
+    <div class="row-wrap js-head-actions"></div>
+  </div>
+
+  <form class="admin-form js-form" novalidate>
+    <div class="form-error js-error" role="alert" hidden></div>
+
+    <section class="card card-pad stack" aria-labelledby="details-title">
+      <h2 id="details-title" class="card-title">Details</h2>
+      <div class="form-grid">
+        <div class="field field-wide">
+          <label for="f-title">Title</label>
+          <input class="input" id="f-title" name="title" required maxlength="80" placeholder="Sum of Three Numbers">
+        </div>
+        <div class="field">
+          <label for="f-slug">URL slug</label>
+          <input class="input mono" id="f-slug" name="slug" required pattern="[a-z0-9][a-z0-9\-]{1,63}" spellcheck="false" aria-describedby="slug-hint">
+          <p class="hint" id="slug-hint">/problems/<span class="js-slug-preview">…</span></p>
+        </div>
+        <div class="field">
+          <label for="f-index">Letter</label>
+          <input class="input mono" id="f-index" name="index" required maxlength="3" style="text-transform: uppercase">
+        </div>
+        <div class="field">
+          <label for="f-difficulty">Difficulty</label>
+          <select class="select" id="f-difficulty" name="difficulty">
+            <option>Easy</option><option>Medium</option><option>Hard</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-time">Time limit (ms, C/C++)</label>
+          <input class="input mono" id="f-time" name="time_limit_ms" type="number" min="100" max="10000" step="100" value="1000">
+        </div>
+        <div class="field">
+          <label for="f-memory">Memory limit (MB, C/C++)</label>
+          <input class="input mono" id="f-memory" name="memory_limit_mb" type="number" min="16" max="1024" step="16" value="256">
+        </div>
+        <div class="field field-wide">
+          <label for="f-tags">Tags</label>
+          <input class="input" id="f-tags" name="tags" placeholder="math, implementation" aria-describedby="tags-hint">
+          <p class="hint" id="tags-hint">Comma separated, lowercase. Python automatically gets 3× time and 2× memory.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-pad stack" aria-labelledby="statement-title">
+      <div class="section-title"><h2 id="statement-title" class="card-title">Statement</h2><span class="spacer"></span>
+        <span class="subtle" style="font-size: var(--text-xs)">Markdown: ## headings, `code`, **bold**, lists, ``` blocks</span></div>
+      <div class="md-split">
+        <div class="field">
+          <label for="f-statement">Markdown</label>
+          <textarea class="input textarea mono" id="f-statement" name="statement" rows="16" required></textarea>
+        </div>
+        <div class="field">
+          <span class="label" id="preview-label">Preview</span>
+          <article class="prose md-preview js-preview" aria-labelledby="preview-label"></article>
+        </div>
+      </div>
+      <div class="sample-pair">
+        <div class="field">
+          <label for="f-sample-in">Sample input (public)</label>
+          <textarea class="input textarea mono" id="f-sample-in" name="sample_input" rows="5"></textarea>
+        </div>
+        <div class="field">
+          <label for="f-sample-out">Sample output (public)</label>
+          <textarea class="input textarea mono" id="f-sample-out" name="sample_output" rows="5" required></textarea>
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <span class="subtle js-save-note" aria-live="polite"></span>
+      <span class="spacer"></span>
+      <button class="btn btn-primary js-save" type="submit">
+        <span data-icon="check" data-size="14"></span>
+        <span class="btn-label-idle">{{ 'Save changes' if slug else 'Create problem' }}</span><span class="btn-label-busy">Saving…</span>
+      </button>
+    </div>
+  </form>
+
+  <section class="card card-pad stack js-tests-card" aria-labelledby="tests-title" {% if not slug %}hidden{% endif %}>
+    <div class="section-title"><h2 id="tests-title" class="card-title">Hidden tests</h2><span class="spacer"></span>
+      <span class="chip js-tests-count"></span></div>
+    <p class="muted">Upload a <strong>.zip</strong> with <span class="mono">1.in 1.out 2.in 2.out …</span> (at the top level or in a <span class="mono">tests/</span> folder). It replaces all current tests. The contents are never shown to contestants.</p>
+    <label class="dropzone js-dropzone" for="f-zip">
+      <span data-icon="cloud" data-size="22"></span>
+      <span><strong>Choose a ZIP</strong> or drop it here</span>
+      <span class="subtle js-zip-name">max 32 MB, up to 200 tests</span>
+      <input class="sr-only" id="f-zip" type="file" accept=".zip,application/zip">
+    </label>
+    <div class="row-wrap"><span class="spacer"></span>
+      <button class="btn js-upload" type="button" disabled>
+        <span data-icon="cloud" data-size="14"></span><span class="btn-label-idle">Upload tests</span><span class="btn-label-busy">Uploading…</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="card card-pad stack js-validate-card" aria-labelledby="validate-title" {% if not slug %}hidden{% endif %}>
+    <div class="section-title"><h2 id="validate-title" class="card-title">Check with a reference solution</h2><span class="spacer"></span>
+      <span class="js-validation-badge"></span></div>
+    <p class="muted">Runs your correct solution on every hidden test in the sandbox. Publish only when it is Accepted, so the tests are proven consistent with the statement.</p>
+    <div class="row-wrap">
+      <label class="sr-only" for="v-language">Language</label>
+      <select class="select" id="v-language">
+        <option value="cpp">C++17</option><option value="c">C17</option><option value="python">Python 3</option>
+      </select>
+    </div>
+    <div class="editor-host admin-editor" id="v-editor"></div>
+    <div class="row-wrap"><span class="spacer"></span>
+      <button class="btn btn-primary js-validate" type="button">
+        <span data-icon="play" data-size="14"></span><span class="btn-label-idle">Run on all tests</span><span class="btn-label-busy">Running…</span>
+      </button>
+    </div>
+    <div class="js-validate-result" aria-live="polite"></div>
+  </section>
+
+  <section class="card card-pad stack danger-zone js-danger" aria-labelledby="danger-title" {% if not slug %}hidden{% endif %}>
+    <h2 id="danger-title" class="card-title">Delete problem</h2>
+    <p class="muted">Deletes the statement and all tests from the server. Old submissions stay in the history. This cannot be undone.</p>
+    <div class="row-wrap">
+      <label class="sr-only" for="delete-confirm">Type the slug to confirm</label>
+      <input class="input mono" id="delete-confirm" placeholder="type the slug to confirm" autocomplete="off" spellcheck="false">
+      <button class="btn btn-danger js-delete" type="button" disabled><span data-icon="x" data-size="14"></span>Delete forever</button>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin-problem.js') }}"></script>{% endblock %}

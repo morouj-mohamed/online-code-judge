@@ -164,6 +164,7 @@ async function initEditor() {
 }
 
 languageSelect.addEventListener("change", () => {
+  skipLanguageCheck = false;
   saveDraft(slug, language, editor.getValue());          // keep the old language's code
   language = languageSelect.value;
   setPref("language", language);
@@ -203,6 +204,52 @@ function setBusy(button, isBusy) {
       : icon(button === runButton ? "play" : "send", { size: 14 });
   }
 }
+
+/**
+ * A quick guess of the language of a piece of code, from tell-tale lines.
+ * Returns "python", "cpp", "c" or null when unsure. Only used to warn.
+ */
+export function guessLanguage(code) {
+  const text = code.replace(/\/\*[\s\S]*?\*\//g, "");
+  const hasInclude = /^\s*#\s*include\b/m.test(text);
+  const cppHints = /\b(std::|cout|cin\s*>>|using\s+namespace|template\s*<)/.test(text) ||
+    /#\s*include\s*<(iostream|bits\/stdc\+\+\.h|vector|string|algorithm|map|set)>/.test(text);
+  const pyHints = /^\s*(def |import \w|from \w+ import|print\(|elif |for \w+ in )/m.test(text) ||
+    /\binput\(\)/.test(text);
+  if (pyHints && !hasInclude && !/;\s*$/m.test(text)) return "python";
+  if (cppHints) return "cpp";
+  if (hasInclude) return "c";
+  return null;
+}
+
+function switchLanguageKeepingCode(target) {
+  const code = editor.getValue();
+  language = target;
+  languageSelect.value = target;
+  setPref("language", target);
+  editor.setLanguage(target);
+  saveDraft(slug, target, code);
+  renderLimits();
+  announce(`Language: ${LANGUAGE_LABELS[target]}`);
+}
+
+/** Warn (once per attempt) when the code clearly is not in the selected language. */
+function languageLooksWrong(code, retry) {
+  const guess = guessLanguage(code);
+  const mismatch = guess && guess !== language && !(guess === "c" && language === "cpp");
+  if (!mismatch || skipLanguageCheck) return false;
+  toast({
+    title: `This looks like ${LANGUAGE_LABELS[guess]}`,
+    message: `The selected language is ${LANGUAGE_LABELS[language]}, so it would not compile or run correctly.`,
+    kind: "warning",
+    actions: [
+      { label: `Switch to ${LANGUAGE_LABELS[guess]}`, primary: true, onClick: () => { switchLanguageKeepingCode(guess); retry(); } },
+      { label: "Keep it", onClick: () => { skipLanguageCheck = true; retry(); } },
+    ],
+  });
+  return true;
+}
+let skipLanguageCheck = false;
 
 function codeOrWarn() {
   const code = editor?.getValue() ?? "";
@@ -247,7 +294,7 @@ function renderRunResult(result) {
 async function runSample() {
   if (busy) return;
   const code = codeOrWarn();
-  if (code === null) return;
+  if (code === null || languageLooksWrong(code, runSample)) return;
   setBusy(runButton, true);
   try {
     const result = await api.runSample(slug, language, code);
@@ -262,7 +309,7 @@ async function runSample() {
 async function submit() {
   if (busy) return;
   const code = codeOrWarn();
-  if (code === null) return;
+  if (code === null || languageLooksWrong(code, submit)) return;
   setBusy(submitButton, true);
   saveDraft(slug, language, code);
   try {

@@ -20,13 +20,16 @@ const region = document.getElementById("subs-region");
 const chip = document.getElementById("stream-state");
 let rows = new Map();          // id -> submission
 let titles = {};               // slug -> "A. Sum of Two Numbers"
+const isAdmin = document.body.dataset.admin === "1";
+let scope = new URLSearchParams(location.search).get("scope") === "all" && isAdmin ? "all" : "mine";
 
 function rowHtml(s) {
   const title = titles[s.problem] || s.problem;
   const failed = s.failed_test && FINAL.has(s.status) && s.status !== "Accepted" ? ` on test ${s.failed_test}` : "";
   return `<tr data-id="${s.id}">
     <td>#${s.id}</td>
-    <td><a class="row-link" href="/submissions/${s.id}">${escapeHtml(title)}</a></td>
+    <td><a class="row-link" href="/submissions/${s.id}">${escapeHtml(title)}</a>
+      ${scope === "all" ? `<div class="subtle" style="font-size: var(--text-xs)">${escapeHtml(s.username || "anonymous")}</div>` : ""}</td>
     <td class="hide-sm"><span class="lang-pill">${escapeHtml(LANGUAGE_LABELS[s.language] || s.language)}</span></td>
     <td>${verdictBadge(s.status)}<span class="subtle" style="font-size: var(--text-xs)">${escapeHtml(failed)}</span></td>
     <td class="num">${FINAL.has(s.status) ? formatMs(s.time_ms) : "—"}</td>
@@ -78,12 +81,18 @@ function updateRow(sub) {
 async function load() {
   region.setAttribute("aria-busy", "true");
   try {
-    const [subs, problems] = await Promise.all([api.submissions(100), api.problems().catch(() => null)]);
+    const [subs, problems] = await Promise.all([api.submissions(100, scope), api.problems().catch(() => null)]);
+    const intro = document.querySelector(".js-intro");
+    if (intro) {
+      intro.textContent = scope === "all" ? "Every submission on this server (admin view). Statuses update live."
+        : subs.account ? `Submissions of ${subs.account.username}, from any device. Statuses update live.`
+          : "Only this browser's submissions are listed. Log in to keep them across devices.";
+    }
     if (problems) {
       titles = Object.fromEntries(problems.problems.map((p) => [p.slug, `${p.index}. ${p.title}`]));
     }
     rows = new Map(subs.submissions.map((s) => [s.id, s]));
-    reconcileStatuses(subs.submissions);
+    if (scope === "mine") reconcileStatuses(subs.submissions);
     render();
   } catch (error) {
     renderError(error);
@@ -95,6 +104,17 @@ const reloadSoon = debounce(load, 300);
 function setChip(stateName, text) {
   chip.querySelector(".dot").dataset.state = stateName;
   chip.querySelector(".js-text").textContent = text;
+}
+
+if (isAdmin) {
+  const toggle = document.querySelector(".js-scope");
+  toggle.hidden = false;
+  toggle.querySelector(`input[value="${scope}"]`).checked = true;
+  toggle.addEventListener("change", (event) => {
+    scope = event.target.value;
+    history.replaceState(null, "", scope === "all" ? "?scope=all" : location.pathname);
+    load();
+  });
 }
 
 function listen() {
@@ -111,7 +131,7 @@ function listen() {
       updateRow(merged);
       if (FINAL.has(data.status)) {
         announce(`Submission ${sub.id}: ${verdictInfo(data.status).label}`);
-        reconcileStatuses([merged]);
+        if (scope === "mine") reconcileStatuses([merged]);
       }
     },
   }, (s) => {

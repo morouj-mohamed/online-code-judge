@@ -244,6 +244,19 @@ def set_validation(slug, result):
         _write_meta(slug, meta)
 
 
+def delete_problem(slug):
+    """Remove a problem folder for good. Old submissions keep their slug."""
+    if not exists(slug):
+        raise ProblemStoreError(f"unknown problem: {slug}")
+    with _write_lock:
+        folder = problem_dir(slug)
+        # Rename first (atomic), so the problem disappears at once even if
+        # deleting many test files takes a moment.
+        doomed = os.path.join(config.PROBLEMS_DIR, f".deleting-{slug}-{int(time.time() * 1000)}")
+        os.rename(folder, doomed)
+        shutil.rmtree(doomed, ignore_errors=True)
+
+
 def replace_tests(slug, zip_bytes):
     """
     Replace all tests of a problem with the contents of a ZIP file.

@@ -62,7 +62,9 @@ function row(problem, i) {
   const status = statuses[problem.slug] || "unsolved";
   const meta = STATUS_META[status];
   const cpp = problem.limits_by_language.cpp;
-  return `<li class="problem-row" data-status="${status}" style="--i:${i}">
+  const hiddenBadge = problem.hidden
+    ? `<span class="state-badge" data-state="hidden">${icon("eye-off", { size: 13 })}Hidden</span>` : "";
+  return `<li class="problem-row" data-status="${status}" data-hidden="${Boolean(problem.hidden)}" style="--i:${i}">
     <span class="problem-index" aria-hidden="true">${escapeHtml(problem.index)}</span>
     <div class="problem-main">
       <a class="problem-title" href="/problems/${encodeURIComponent(problem.slug)}">
@@ -71,6 +73,7 @@ function row(problem, i) {
         <span class="difficulty" data-level="${LEVEL[problem.difficulty] || 1}">
           <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>${escapeHtml(problem.difficulty)}</span>
         ${problem.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}
+        ${hiddenBadge}
       </div>
     </div>
     <div class="problem-side">

@@ -1135,6 +1135,15 @@ def create_app(service=None):
             raise ApiError(400, "invalid_problem", str(exc)) from None
         return jsonify(admin_problem_payload(slug))
 
+    @app.delete("/api/admin/problems/<slug>")
+    def admin_delete_problem(slug):
+        require_admin()
+        admin_slug(slug)
+        if read_json().get("confirm") != slug:
+            raise ApiError(400, "confirm_required", "send {\"confirm\": \"<slug>\"} to delete")
+        problemstore.delete_problem(slug)
+        return jsonify({"deleted": slug})
+
     @app.post("/api/admin/problems/<slug>/visibility")
     def admin_visibility(slug):
         require_admin()

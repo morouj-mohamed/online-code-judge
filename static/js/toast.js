@@ -29,15 +29,26 @@ function dismiss(el) {
   setTimeout(remove, 400);   // in case animations are disabled
 }
 
-/** toast({title, message, kind: "success"|"error"|"warning"|"info", timeout}) */
-export function toast({ title, message = "", kind = "info", timeout = 4500 }) {
+/**
+ * toast({title, message, kind: "success"|"error"|"warning"|"info", timeout, actions})
+ * actions: [{label, onClick, primary}] - buttons inside the toast; a toast with
+ * actions stays until it is answered or dismissed.
+ */
+export function toast({ title, message = "", kind = "info", timeout = 4500, actions = [] }) {
   const el = document.createElement("div");
   el.className = "toast";
   el.dataset.kind = kind;
   el.innerHTML = `${icon(ICONS[kind] || "info", { size: 18 })}
-    <div><strong>${escapeHtml(title)}</strong>${message ? `<p>${escapeHtml(message)}</p>` : ""}</div>
-    <button class="btn btn-ghost btn-sm btn-icon" type="button" aria-label="Dismiss notification">${icon("x", { size: 14 })}</button>`;
-  el.querySelector("button").addEventListener("click", () => dismiss(el));
+    <div><strong>${escapeHtml(title)}</strong>${message ? `<p>${escapeHtml(message)}</p>` : ""}
+      ${actions.length ? `<div class="toast-actions">${actions.map((a, i) =>
+        `<button class="btn btn-sm${a.primary ? " btn-primary" : ""}" type="button" data-action="${i}">${escapeHtml(a.label)}</button>`).join("")}</div>` : ""}</div>
+    <button class="btn btn-ghost btn-sm btn-icon js-dismiss" type="button" aria-label="Dismiss notification">${icon("x", { size: 14 })}</button>`;
+  el.querySelector(".js-dismiss").addEventListener("click", () => dismiss(el));
+  el.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => {
+    dismiss(el);
+    actions[Number(button.dataset.action)].onClick();
+  }));
+  if (actions.length) timeout = 0;
   container().appendChild(el);
   if (timeout) setTimeout(() => dismiss(el), timeout);
   return el;

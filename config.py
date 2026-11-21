@@ -185,6 +185,10 @@ RATE_LIMITS = {
     "submit":     {"session": (10, 60), "ip": (40, 60)},
     "run_sample": {"session": (20, 60), "ip": (60, 60)},
     "stress":     {"session": (1, 60),  "ip": (3, 60)},
+    # Login and sign-up: slows down password guessing (10 tries per 5 minutes).
+    "auth":       {"session": (10, 300), "ip": (30, 300)},
+    # Admin "validate with a reference solution" runs every hidden test.
+    "validate":   {"session": (10, 60), "ip": (20, 60)},
 }
 
 # How long POST /api/submit waits for a free place in a full queue before it
@@ -204,6 +208,14 @@ SSE_RETRY_MS = 2000                        # how long the browser waits before r
 
 SUBMISSIONS_PAGE_MAX = 100                 # GET /api/submissions?limit=... upper bound
 STRESS_SUBMISSIONS = 20                    # POST /api/inspector/stress fires this many
+
+# Accounts. The login cookie holds a random token; the database stores only
+# its SHA-256. A login lasts 30 days (or until "Log out").
+AUTH_COOKIE = "ocj_auth"
+AUTH_TTL_S = 30 * 24 * 3600
+# Anyone may create an account (set JUDGE_ALLOW_SIGNUP=0 to close sign-up).
+# Admins are made with:  python3 tools/manage_users.py create-admin <name>
+ALLOW_SIGNUP = os.environ.get("JUDGE_ALLOW_SIGNUP", "1") == "1"
 
 # Graceful shutdown: how long running submissions may take to finish.
 SHUTDOWN_TIMEOUT_S = 30.0

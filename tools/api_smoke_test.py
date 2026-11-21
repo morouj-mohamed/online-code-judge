@@ -27,11 +27,15 @@ Exit status 0 if every check passed, 1 otherwise.
 
 import argparse
 import http.cookiejar
+import io
 import json
 import os
 import re
+import secrets
+import subprocess
 import sys
 import time
+import zipfile
 import urllib.error
 import urllib.request
 
@@ -79,9 +83,9 @@ class Client:
         self.bodies = []          # every response body, for the leak scan
 
     def request(self, method, path, body=None, raw=None, content_type="application/json",
-                timeout=60):
+                timeout=60, headers=None):
         data = None
-        headers = {}
+        headers = dict(headers or {})
         if body is not None:
             data = json.dumps(body).encode()
             headers["Content-Type"] = content_type
@@ -128,6 +132,45 @@ class Client:
                     data_lines.append(text[5:].strip())
         self.bodies.append("".join(raw))
         return events
+
+
+    def upload(self, path, filename, data):
+        """POST one file as multipart/form-data (field name "file")."""
+        boundary = "----smoke" + secrets.token_hex(8)
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+                f"Content-Type: application/zip\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+        return self.request("POST", path, raw=body, content_type=f"multipart/form-data; boundary={boundary}")
+
+
+def make_zip(files):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, text in files.items():
+            archive.writestr(name, text)
+    return buffer.getvalue()
+
+
+def make_admin():
+    """
+    Create (or reset) the account "smoke-admin" with a random password, using
+    tools/manage_users.py on this machine. Works when the smoke test runs where
+    the server's database is (e.g. docker compose exec). Returns the password,
+    or None if that is not possible.
+    """
+    password = secrets.token_urlsafe(18)
+    env = dict(os.environ, JUDGE_ADMIN_PASSWORD=password)
+    script = os.path.join(ROOT, "tools", "manage_users.py")
+    for command in ("create-admin", "set-password", "promote"):
+        result = subprocess.run([sys.executable, script, command, "smoke-admin"], env=env,
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+    return password
+
+
+def demote_admin():
+    script = os.path.join(ROOT, "tools", "manage_users.py")
+    subprocess.run([sys.executable, script, "demote", "smoke-admin"], capture_output=True)
 
 
 # ----------------------------------------------------------------------------
@@ -421,15 +464,114 @@ def main():
             ok = resp.status == 200 and len(resp.read()) > 1000
         check(f"GET {asset} is served locally (works offline)", ok)
 
-    # ------------------------------------------------------------ 11. leak scan
-    print("[11] Leak scan over every response body")
+    # ------------------------------------------------------------ 11. accounts
+    print("[11] Accounts")
+    dave = Client(args.base)
+    quick_py = read(os.path.join(TESTS_DIR, "correct.py"))
+    _, anon_sub, _ = dave.request("POST", "/api/submit", body={"problem": "sum-two", "language": "python", "code": quick_py})
+    follow(dave, anon_sub["id"], anon_sub["seq"])
+    name = "smoke_" + secrets.token_hex(4)
+    password = secrets.token_urlsafe(12)
+    status, payload, _ = dave.request("POST", "/api/auth/signup", body={"username": name, "password": "short"})
+    check("weak password -> 400 invalid_account", status == 400 and is_error(payload, "invalid_account"))
+    status, payload, _ = dave.request("POST", "/api/auth/signup", body={"username": name, "password": password})
+    check("sign up -> 201, and the browser's anonymous submission moves to the account",
+          status == 201 and payload["moved_submissions"] == 1, f"user {name}")
+    check("the login cookie is HttpOnly-only data (not in the JSON)", "token" not in json.dumps(payload))
+    status, payload, _ = dave.request("GET", "/api/auth/me")
+    check("GET /api/auth/me -> the account", status == 200 and payload["user"]["username"] == name)
+    status, payload, _ = Client(args.base).request("POST", "/api/auth/signup", body={"username": name.upper(), "password": password})
+    check("same username (any letter case) -> 409", status == 409 and is_error(payload, "username_taken"))
+    dave.request("POST", "/api/auth/logout", body={})
+    status, payload, _ = dave.request("GET", "/api/auth/me")
+    check("log out -> anonymous again", status == 200 and payload["user"] is None)
+    status, _, _ = dave.request("GET", f"/api/submissions/{anon_sub['id']}")
+    check("after log out the account's submission is private again", status == 404)
+    status, wrong_pw, _ = dave.request("POST", "/api/auth/login", body={"username": name, "password": password + "x"})
+    status2, no_user, _ = dave.request("POST", "/api/auth/login", body={"username": name + "zz", "password": password})
+    check("wrong password and unknown user give the SAME 401 answer",
+          status == status2 == 401 and wrong_pw == no_user and is_error(wrong_pw, "invalid_credentials"))
+    status, payload, _ = dave.request("POST", "/api/auth/login", body={"username": name, "password": password})
+    status_sub, _, _ = dave.request("GET", f"/api/submissions/{anon_sub['id']}")
+    check("log in -> the submission is visible again (from any device)", status == 200 and status_sub == 200)
+    status, payload, _ = dave.request("POST", "/api/submit", body={"problem": "sum-two", "language": "python", "code": quick_py},
+                                      headers={"Origin": "http://evil.example"})
+    check("a cross-site POST (foreign Origin) -> 403", status == 403 and is_error(payload, "bad_origin"))
+    status, payload, _ = dave.request("GET", "/api/admin/problems")
+    status_anon, _, _ = Client(args.base).request("GET", "/api/admin/problems")
+    check("admin API: normal user -> 403, anonymous -> 401", status == 403 and status_anon == 401)
+
+    # ------------------------------------------------------------ 12. admin
+    print("[12] Admin: problems")
+    admin_password = make_admin()
+    if admin_password is None:
+        print("  (skipped: run this on the server, e.g. docker compose exec judge python3 tools/api_smoke_test.py)")
+    else:
+        admin = Client(args.base)
+        status, _, _ = admin.request("POST", "/api/auth/login", body={"username": "smoke-admin", "password": admin_password})
+        check("admin logs in", status == 200)
+        slug = "smoke-" + secrets.token_hex(3)
+        draft = {"slug": slug, "index": "Z", "title": "Sum of Three", "difficulty": "Easy", "tags": ["math"],
+                 "time_limit_ms": 1000, "memory_limit_mb": 256,
+                 "statement": "# Z. Sum of Three\n\nPrint `a + b + c`.\n\n## Input\nThree integers.\n",
+                 "sample_input": "1 2 3\n", "sample_output": "6\n"}
+        status, payload, _ = admin.request("POST", "/api/admin/problems", body={**draft, "slug": "../etc"})
+        check("bad slug -> 400", status == 400 and is_error(payload, "invalid_problem"))
+        status, created, _ = admin.request("POST", "/api/admin/problems", body=draft)
+        check("create problem -> 201, hidden by default", status == 201 and created["hidden"] is True)
+        status, _, _ = alice.request("GET", f"/api/problems/{slug}")
+        _, listing, _ = alice.request("GET", "/api/problems")
+        check("a hidden problem is invisible to others (404, not listed)",
+              status == 404 and slug not in [p["slug"] for p in listing["problems"]])
+        status, payload, _ = alice.request("POST", "/api/submit", body={"problem": slug, "language": "python", "code": quick_py})
+        check("and cannot be submitted to", status == 400 and is_error(payload, "unknown_problem"))
+        evil = make_zip({"../evil.in": "x", "1.out": "y"})
+        status, payload, _ = admin.upload(f"/api/admin/problems/{slug}/tests", "evil.zip", evil)
+        check("ZIP with a '../' path -> refused", status == 400 and is_error(payload, "invalid_tests"))
+        status, payload, _ = admin.upload(f"/api/admin/problems/{slug}/tests", "bad.zip", make_zip({"1.in": "1 2 3\n"}))
+        check("ZIP with a missing .out -> refused", status == 400 and "missing" in payload["error"]["message"])
+        status, payload, _ = admin.upload(f"/api/admin/problems/{slug}/tests", "notzip.zip", b"hello")
+        check("not a ZIP -> refused", status == 400)
+        tests = {}
+        for i, (a, b, c) in enumerate([(1, 2, 3), (10**17, 10**17, 10**17), (-5, 0, 5)], start=1):
+            tests[f"tests/{i}.in"] = f"{a} {b} {c}\r\n"
+            tests[f"tests/{i}.out"] = f"{a + b + c}\n"
+        status, payload, _ = admin.upload(f"/api/admin/problems/{slug}/tests", "tests.zip", make_zip(tests))
+        check("valid ZIP (in a tests/ folder, Windows line endings) -> 3 tests", status == 200 and payload["tests"]["count"] == 3)
+        good = "a, b, c = map(int, input().split())\nprint(a + b + c)\n"
+        status, result, _ = admin.request("POST", f"/api/admin/problems/{slug}/validate", body={"language": "python", "code": good})
+        check("reference solution -> Accepted on all tests", status == 200 and result["verdict"] == "Accepted"
+              and len(result["tests"]) == 3)
+        status, result, _ = admin.request("POST", f"/api/admin/problems/{slug}/validate",
+                                          body={"language": "python", "code": "print(6)\n"})
+        check("wrong reference -> Wrong Answer with full details for the admin",
+              status == 200 and result["verdict"] == "Wrong Answer" and "expected" in result["message"])
+        status, payload, _ = admin.request("POST", f"/api/admin/problems/{slug}/visibility", body={"hidden": False})
+        _, listing, _ = alice.request("GET", "/api/problems")
+        check("publish -> listed for everyone", status == 200 and slug in [p["slug"] for p in listing["problems"]])
+        status, sub3, _ = alice.request("POST", "/api/submit", body={"problem": slug, "language": "python", "code": good})
+        _, fin = follow(alice, sub3["id"], sub3["seq"])
+        check("a contestant solves the new problem -> Accepted", fin is not None and fin["status"] == "Accepted")
+        status, payload, _ = admin.request("PUT", f"/api/admin/problems/{slug}", body={**draft, "title": "Sum of Three Numbers"})
+        check("edit -> saved", status == 200 and payload["title"] == "Sum of Three Numbers")
+        status, payload, _ = admin.request("DELETE", f"/api/admin/problems/{slug}", body={"confirm": "nope"})
+        check("delete without the right confirmation -> 400", status == 400)
+        status, payload, _ = admin.request("DELETE", f"/api/admin/problems/{slug}", body={"confirm": slug})
+        status_after, _, _ = alice.request("GET", f"/api/problems/{slug}")
+        check("delete -> gone", status == 200 and status_after == 404)
+        status, payload, _ = admin.request("GET", "/admin".replace("/admin", "/api/admin/problems"))
+        check("admin overview lists accounts", status == 200 and any(u["username"] == name for u in payload["users"]))
+        demote_admin()
+
+    # ------------------------------------------------------------ 13. leak scan
+    print("[13] Leak scan over every response body")
     tokens = hidden_tokens()
     seen = set()
-    for body in alice.bodies + bob.bodies + carol.bodies:
+    for body in alice.bodies + bob.bodies + carol.bodies + dave.bodies:
         seen.update(re.findall(r"[-\w]+", body))
     leaked = sorted(tokens & seen)
     check(f"none of the {len(tokens)} hidden-test tokens appeared in "
-          f"{len(alice.bodies) + len(bob.bodies) + len(carol.bodies)} responses",
+          f"{len(alice.bodies) + len(bob.bodies) + len(carol.bodies) + len(dave.bodies)} responses",
           not leaked, ", ".join(leaked[:5]))
 
     passed = sum(RESULTS)

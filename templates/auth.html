@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Log in' if mode == 'login' else 'Create account' }} · Online Code Judge{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <section class="card auth-card" aria-labelledby="auth-title">
+    <div class="auth-head">
+      <span class="brand-mark brand-mark-lg" aria-hidden="true"><span data-icon="logo" data-size="24"></span></span>
+      <h1 id="auth-title">{{ 'Welcome back' if mode == 'login' else 'Create your account' }}</h1>
+      <p class="muted">{{ 'Log in to see your submissions on any device.' if mode == 'login'
+                         else 'Keep your submissions across devices. What you solved in this browser comes with you.' }}</p>
+    </div>
+    <form class="stack js-auth-form" data-mode="{{ mode }}" novalidate>
+      <div class="form-error js-error" role="alert" hidden></div>
+      <div class="field">
+        <label for="username">Username</label>
+        <input class="input" id="username" name="username" autocomplete="username" required
+               minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,31}" spellcheck="false" autocapitalize="off"
+               aria-describedby="username-hint">
+        {% if mode == 'signup' %}<p class="hint" id="username-hint">3–32 characters: letters, digits, “_”, “.” or “-”.</p>{% endif %}
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-field">
+          <input class="input" id="password" name="password" type="password" required minlength="{{ 8 if mode == 'signup' else 1 }}" maxlength="128"
+                 autocomplete="{{ 'current-password' if mode == 'login' else 'new-password' }}" aria-describedby="password-hint">
+          <button class="btn btn-ghost btn-sm js-reveal" type="button" aria-pressed="false" aria-controls="password">Show</button>
+        </div>
+        {% if mode == 'signup' %}<p class="hint" id="password-hint">At least 8 characters. It is stored only as a salted scrypt hash.</p>{% endif %}
+      </div>
+      <button class="btn btn-primary btn-block js-submit" type="submit">
+        <span class="btn-label-idle">{{ 'Log in' if mode == 'login' else 'Create account' }}</span>
+        <span class="btn-label-busy">{{ 'Logging in…' if mode == 'login' else 'Creating…' }}</span>
+      </button>
+    </form>
+    <p class="auth-switch muted">
+      {% if mode == 'login' %}
+        {% if allow_signup %}No account yet? <a href="/signup">Create one</a>{% endif %}
+      {% else %}
+        Already have an account? <a href="/login">Log in</a>
+      {% endif %}
+    </p>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-auth.js') }}"></script>{% endblock %}

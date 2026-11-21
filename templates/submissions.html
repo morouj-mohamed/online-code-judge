@@ -5,8 +5,13 @@
   <div class="page-head">
     <div class="stack" style="gap: 8px; flex: 1 1 auto">
       <h1>My submissions</h1>
-      <p class="muted">Only this browser's submissions are listed. Statuses update live.</p>
+      <p class="muted js-intro">Statuses update live.</p>
     </div>
+    <fieldset class="segmented js-scope" hidden>
+      <legend class="sr-only">Show</legend>
+      <input type="radio" name="scope" id="scope-mine" value="mine"><label for="scope-mine">Mine</label>
+      <input type="radio" name="scope" id="scope-all" value="all"><label for="scope-all">All users</label>
+    </fieldset>
     <div class="live-chip" id="stream-state" role="status">
       <span class="dot" data-state="connecting" aria-hidden="true"></span><span class="js-text">Connecting…</span>
     </div>

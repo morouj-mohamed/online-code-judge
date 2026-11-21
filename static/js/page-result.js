@@ -215,8 +215,10 @@ function liveMaxima() {
 function renderMetrics(animate = false) {
   const finished = FINAL.has(state.status);
   const m = liveMaxima();
-  const time = finished ? state.sub.time_ms ?? m.time : m.time;
-  const memory = finished ? state.sub.memory_kb ?? m.memory : m.memory;
+  // Nothing ran after a compilation error: show "—", not a misleading "0 ms".
+  const ranNothing = state.status === "Compilation Error" || state.results.size === 0;
+  const time = ranNothing ? null : finished ? state.sub.time_ms ?? m.time : m.time;
+  const memory = ranNothing ? null : finished ? state.sub.memory_kb ?? m.memory : m.memory;
   const timeEl = body.querySelector(".js-m-time");
   const memEl = body.querySelector(".js-m-memory");
   if (animate) {

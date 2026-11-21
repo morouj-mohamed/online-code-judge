@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Admin · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <p class="eyebrow">Admin</p>
+      <h1>Problems</h1>
+      <p class="muted">Create problems, upload hidden tests, check them with a reference solution, then publish.</p>
+    </div>
+    <a class="btn btn-primary" href="/admin/problems/new"><span data-icon="plus"></span>New problem</a>
+  </div>
+  <div id="admin-problems" aria-busy="true">
+    <div class="card"><div class="stack" style="padding: 16px; gap: 12px" aria-hidden="true">
+      <div class="skeleton skeleton-line" style="height: 20px"></div>
+      <div class="skeleton skeleton-line" style="height: 20px"></div>
+      <div class="skeleton skeleton-line" style="height: 20px"></div>
+    </div></div>
+  </div>
+  <section class="admin-users" aria-labelledby="users-title">
+    <div class="section-title"><h2 id="users-title">Accounts</h2><span class="spacer"></span>
+      <span class="subtle mono" style="font-size: var(--text-xs)">tools/manage_users.py promote &lt;name&gt;</span></div>
+    <div id="admin-users"></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin.js') }}"></script>{% endblock %}

@@ -15,7 +15,9 @@ export class ApiError extends Error {
 
 async function request(method, path, body) {
   const options = { method, headers: { Accept: "application/json" }, credentials: "same-origin" };
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    options.body = body;                 // the browser sets the multipart Content-Type
+  } else if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
@@ -45,11 +47,32 @@ export const api = {
   problem: (slug) => request("GET", `/api/problems/${encodeURIComponent(slug)}`),
   submit: (problem, language, code) => request("POST", "/api/submit", { problem, language, code }),
   runSample: (problem, language, code) => request("POST", "/api/run-sample", { problem, language, code }),
-  submissions: (limit = 50) => request("GET", `/api/submissions?limit=${limit}`),
+  submissions: (limit = 50, scope = "mine") => request("GET", `/api/submissions?limit=${limit}&scope=${scope}`),
   submission: (id, withEvents = false) =>
     request("GET", `/api/submissions/${id}${withEvents ? "?events=1" : ""}`),
   sampleRun: (id) => request("POST", `/api/submissions/${id}/sample-run`),
   inspector: () => request("GET", "/api/inspector/state"),
+
+  me: () => request("GET", "/api/auth/me"),
+  login: (username, password) => request("POST", "/api/auth/login", { username, password }),
+  signup: (username, password) => request("POST", "/api/auth/signup", { username, password }),
+  logout: () => request("POST", "/api/auth/logout", {}),
+
+  admin: {
+    problems: () => request("GET", "/api/admin/problems"),
+    problem: (slug) => request("GET", `/api/admin/problems/${encodeURIComponent(slug)}`),
+    create: (data) => request("POST", "/api/admin/problems", data),
+    update: (slug, data) => request("PUT", `/api/admin/problems/${encodeURIComponent(slug)}`, data),
+    remove: (slug) => request("DELETE", `/api/admin/problems/${encodeURIComponent(slug)}`, { confirm: slug }),
+    visibility: (slug, hidden) => request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/visibility`, { hidden }),
+    uploadTests(slug, file) {
+      const form = new FormData();
+      form.append("file", file);
+      return request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/tests`, form);
+    },
+    validate: (slug, language, code) =>
+      request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/validate`, { language, code }),
+  },
 };
 
 /** A human sentence for an ApiError, used in toasts. */

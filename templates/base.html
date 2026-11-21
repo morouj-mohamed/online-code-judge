@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}" data-page="{{ page }}">
+<body class="{% block body_class %}{% endblock %}" data-page="{{ page }}" data-user="{{ viewer.user.username if viewer and viewer.user else '' }}" data-admin="{{ '1' if viewer and viewer.is_admin else '0' }}">
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="site-header">
@@ -33,6 +33,11 @@
         <a href="/submissions" {% if page in ('submissions', 'result') %}aria-current="page"{% endif %}>
           <span data-icon="list"></span><span>Submissions</span>
         </a>
+        {% if viewer and viewer.is_admin %}
+        <a href="/admin" {% if page == 'admin' %}aria-current="page"{% endif %}>
+          <span data-icon="server"></span><span>Admin</span>
+        </a>
+        {% endif %}
       </nav>
       <div class="header-actions">
         <button class="btn btn-ghost palette-trigger" type="button" aria-label="Open command palette (Control K)">
@@ -43,6 +48,23 @@
           <span data-icon="sun" data-class="icon-sun" data-size="18"></span>
           <span data-icon="moon" data-class="icon-moon" data-size="18"></span>
         </button>
+        {% if viewer and viewer.user %}
+        <div class="user-menu">
+          <button class="btn btn-ghost user-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu-list">
+            <span class="avatar" aria-hidden="true">{{ viewer.user.username[:1] | upper }}</span>
+            <span class="user-name">{{ viewer.user.username }}</span>
+            {% if viewer.is_admin %}<span class="role-pill">admin</span>{% endif %}
+          </button>
+          <ul class="menu" id="user-menu-list" role="menu" hidden>
+            <li role="none" class="menu-head">Signed in as <strong>{{ viewer.user.username }}</strong></li>
+            <li role="none"><a role="menuitem" href="/submissions"><span data-icon="list"></span>My submissions</a></li>
+            {% if viewer.is_admin %}<li role="none"><a role="menuitem" href="/admin"><span data-icon="server"></span>Admin: problems</a></li>{% endif %}
+            <li role="none"><button role="menuitem" type="button" class="js-logout"><span data-icon="arrow-left"></span>Log out</button></li>
+          </ul>
+        </div>
+        {% else %}
+        <a class="btn btn-sm login-link" href="/login"><span data-icon="user"></span><span>Log in</span></a>
+        {% endif %}
       </div>
     </div>
   </header>
