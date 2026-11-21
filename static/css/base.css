@@ -221,16 +221,38 @@ main { flex: 1 0 auto; }
 }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: var(--s-2); }
 
-@media (max-width: 720px) {
+/* The header shrinks in steps so it always fits on one line. Labels that
+   disappear are only VISUALLY hidden: screen readers still read "Problems",
+   "Log in", the user name... so every icon-only button keeps its name. */
+@media (max-width: 1180px) {
+  .palette-trigger .kbd-hint, .role-pill { display: none; }
+  .palette-trigger .label, .user-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (max-width: 1000px) {
   .brand-name small { display: none; }
   .nav { margin-left: 0; }
-  .nav a span { display: none; }       /* icons only on small screens */
+  .nav a > span, .login-link > span:last-child {   /* icons only */
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
   .nav a { padding-inline: var(--s-2); min-width: var(--touch); justify-content: center; }
-  .palette-trigger .kbd-hint, .palette-trigger .label { display: none; }
+  .login-link { width: var(--touch); padding: 0; justify-content: center; }
 }
-@media (max-width: 400px) {
+/* Phones: 40 px targets (well above the 24 px WCAG minimum) and tight gaps. */
+@media (max-width: 580px) {
   .brand-name { display: none; }
-  .site-header .container, .site-header .bar { gap: var(--s-2); }
+  .site-header .container, .site-header .bar { gap: var(--s-1); padding-inline: var(--s-3); }
+  .nav { gap: 2px; }
+  .nav a { min-width: 40px; min-height: 40px; padding-inline: 0; }
+  .header-actions { gap: 2px; }
+  .header-actions .btn { min-width: 40px; min-height: 40px; height: 40px; padding-inline: 0; justify-content: center; }
+  .header-actions .user-trigger { padding-inline: 2px; }
+}
+/* Very small phones: the logo goes (the "Problems" link is also home). */
+@media (max-width: 380px) {
+  .brand { display: none; }
+}
+@media (max-width: 350px) {
+  .nav a, .header-actions .btn { min-width: 36px; min-height: 36px; height: 36px; }
 }
 
 /* ---------------------------------------------------------- footer ----- */

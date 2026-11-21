@@ -1113,10 +1113,7 @@ details.disclosure[open] > summary .chev { transform: rotate(90deg); }
 .menu a:hover, .menu button:hover, .menu a:focus-visible, .menu button:focus-visible { background: var(--accent-soft); color: var(--text); outline: none; }
 .menu svg { width: 15px; height: 15px; }
 @media (pointer: coarse) { .menu a, .menu button { min-height: var(--touch); } }
-@media (max-width: 720px) {
-  .user-name, .role-pill, .login-link span:last-child { display: none; }
-  .login-link { width: var(--touch); padding: 0; }
-}
+
 
 /* ======================================================== auth pages === */
 .auth-wrap {
