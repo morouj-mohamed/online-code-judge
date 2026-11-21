@@ -98,38 +98,39 @@
 }
 
 /* =========================================================== DARK ====== */
-/* Deep plum-black with layered surfaces: each layer is a little lighter and a
-   little pinker, so depth reads without heavy shadows. Accent: dark pink. */
+/* "Raspberry": near-black with a faint violet tint; each surface layer is a
+   little lighter, so depth reads without heavy shadows. Two pinks: a light
+   one for text (readable on dark) and a deep raspberry for filled buttons. */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #150A10;
-  --bg-elev: #1A0D14;
-  --surface-1: #1F1018;
-  --surface-2: #26141E;
-  --surface-3: #301A26;
-  --surface-sunken: #0F070B;
-  --overlay: rgba(10, 3, 7, 0.72);
+  --bg: #0E0B10;
+  --bg-elev: #120E15;
+  --surface-1: #16121A;
+  --surface-2: #1C1721;
+  --surface-3: #251E2B;
+  --surface-sunken: #0A080C;
+  --overlay: rgba(5, 3, 7, 0.72);
 
-  --border: rgba(255, 214, 232, 0.09);
-  --border-strong: rgba(255, 214, 232, 0.16);
-  --border-focus: #FF7FB6;
+  --border: rgba(240,220,255, 0.08);
+  --border-strong: rgba(240,220,255, 0.15);
+  --border-focus: #F48FB1;
 
-  --text: #F5E6EE;          /* 16.1:1 on --bg */
-  --text-muted: #C7A9B8;    /*  9.1:1 */
-  --text-subtle: #A88A97;   /*  6.2:1 */
+  --text: #F2ECF3;          /* 16.1:1 on --bg */
+  --text-muted: #BBAFC0;    /*  9.1:1 */
+  --text-subtle: #968A9C;   /*  6.2:1 */
   --text-on-accent: #1A0510;
-  --accent-solid: #F2589B;        /* filled buttons */
-  --accent-solid-hover: #F675AD;
-  --text-on-solid: #1A0510;
+  --accent-solid: #C2185B;        /* filled buttons */
+  --accent-solid-hover: #D81B60;
+  --text-on-solid: #FFFFFF;
 
-  --accent: #F2589B;        /*  6.1:1 on --bg */
-  --accent-hover: #F675AD;
-  --accent-strong: #FF93C2;
-  --accent-soft: rgba(242, 88, 155, 0.15);
-  --accent-softer: rgba(242, 88, 155, 0.07);
-  --accent-glow: rgba(242, 88, 155, 0.45);
+  --accent: #F06A9F;        /*  6.1:1 on --bg */
+  --accent-hover: #F483B0;
+  --accent-strong: #F8A0C4;
+  --accent-soft: rgba(240, 106, 159, 0.14);
+  --accent-softer: rgba(240, 106, 159, 0.07);
+  --accent-glow: rgba(194, 24, 91, 0.45);
 
   /* verdict colors (always paired with an icon and a label) */
   --v-ok: #4CC79D;
@@ -138,7 +139,7 @@
   --v-mle: #BBA6FF;
   --v-re: #FFA36B;
   --v-ce: #93B8E6;
-  --v-pending: #C7A9B8;
+  --v-pending: #BBAFC0;
   --v-running: #6CCDF0;
   --v-error: #FF8A80;
 
@@ -148,57 +149,57 @@
   --shadow-3: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 32px -8px rgba(0, 0, 0, 0.6),
               0 32px 64px -24px rgba(0, 0, 0, 0.7);
 
-  --grid-line: rgba(255, 140, 190, 0.06);
+  --grid-line: rgba(240, 106, 159, 0.06);
   --noise-opacity: 0.05;
-  --skeleton-a: #26141E;
-  --skeleton-b: #33202B;
-  --selection: rgba(242, 88, 155, 0.32);
+  --skeleton-a: #1C1721;
+  --skeleton-b: #272030;
+  --selection: rgba(240, 106, 159, 0.3);
 
   /* code editor */
-  --code-bg: #120910;
-  --code-gutter: #170B12;
-  --code-gutter-text: #9F7F8C;   /* 5.4:1 on the gutter */
-  --code-active-line: rgba(242, 88, 155, 0.07);
-  --code-cursor: #FF93C2;
-  --code-keyword: #FF93C2;
+  --code-bg: #0C0A0E;
+  --code-gutter: #110E13;
+  --code-gutter-text: #8F8396;   /* 5.4:1 on the gutter */
+  --code-active-line: rgba(240, 106, 159, 0.06);
+  --code-cursor: #F8A0C4;
+  --code-keyword: #F8A0C4;
   --code-type: #93B8E6;
   --code-string: #E9C27A;
   --code-number: #F2A97E;
-  --code-comment: #9C7B88;      /* 5.1:1 on the editor background */
+  --code-comment: #8E8294;      /* 5.1:1 on the editor background */
   --code-function: #C4B5FF;
-  --code-operator: #C7A9B8;
+  --code-operator: #BBAFC0;
   --code-meta: #7FD8C0;
 }
 
 /* ========================================================== LIGHT ====== */
-/* Soft blush white with white cards; the pink darkens so it still reads. */
+/* Soft blush white with white cards; one deep raspberry for text and buttons. */
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #FBF6F8;
-  --bg-elev: #FDF9FB;
+  --bg: #FAF7F9;
+  --bg-elev: #FCFAFB;
   --surface-1: #FFFFFF;
   --surface-2: #FFFFFF;
-  --surface-3: #F6EDF1;
-  --surface-sunken: #F3E9EE;
-  --overlay: rgba(40, 15, 28, 0.38);
+  --surface-3: #F3EEF2;
+  --surface-sunken: #F0EAEE;
+  --overlay: rgba(30, 15, 25, 0.38);
 
-  --border: rgba(60, 20, 40, 0.10);
-  --border-strong: rgba(60, 20, 40, 0.18);
+  --border: rgba(45,25,40, 0.1);
+  --border-strong: rgba(45,25,40, 0.18);
   --border-focus: #AD1457;
 
-  --text: #1E1218;          /* 17.0:1 on --bg */
-  --text-muted: #5B4651;    /*  8.1:1 */
-  --text-subtle: #6F5964;   /*  6.0:1 */
+  --text: #1D1520;          /* 17.0:1 on --bg */
+  --text-muted: #5A4D5E;    /*  8.1:1 */
+  --text-subtle: #6D6072;   /*  6.0:1 */
   --text-on-accent: #FFFFFF;
   --accent-solid: #AD1457;
-  --accent-solid-hover: #95114B;
+  --accent-solid-hover: #880E4F;
   --text-on-solid: #FFFFFF;
 
   --accent: #AD1457;        /*  6.5:1 on --bg, 7.0:1 on white */
-  --accent-hover: #95114B;
-  --accent-strong: #7C0E3F;
-  --accent-soft: rgba(173, 20, 87, 0.10);
+  --accent-hover: #94114A;
+  --accent-strong: #7A0E3D;
+  --accent-soft: rgba(173, 20, 87, 0.1);
   --accent-softer: rgba(173, 20, 87, 0.05);
   --accent-glow: rgba(173, 20, 87, 0.28);
 
@@ -208,7 +209,7 @@
   --v-mle: #6541C0;
   --v-re: #A84A0C;
   --v-ce: #2C5A8C;
-  --v-pending: #5B4651;
+  --v-pending: #5A4D5E;
   --v-running: #0B6788;
   --v-error: #B42330;
 
@@ -218,21 +219,21 @@
 
   --grid-line: rgba(173, 20, 87, 0.06);
   --noise-opacity: 0.035;
-  --skeleton-a: #F2E8ED;
-  --skeleton-b: #FAF5F7;
+  --skeleton-a: #F1ECEF;
+  --skeleton-b: #F9F6F8;
   --selection: rgba(173, 20, 87, 0.16);
 
   --code-bg: #FFFFFF;
-  --code-gutter: #FCF8FA;
-  --code-gutter-text: #6E5A64;   /* 6.0:1 on the gutter */
-  --code-active-line: rgba(173, 20, 87, 0.05);
+  --code-gutter: #FBF9FA;
+  --code-gutter-text: #6D6072;   /* 6.0:1 on the gutter */
+  --code-active-line: rgba(173, 20, 87, 0.06);
   --code-cursor: #AD1457;
   --code-keyword: #AD1457;
   --code-type: #2C5A8C;
   --code-string: #8A4B00;
   --code-number: #A4400E;
-  --code-comment: #6A5A62;      /* 6.5:1 on white */
+  --code-comment: #6A5F6E;      /* 6.5:1 on white */
   --code-function: #5B3BB0;
-  --code-operator: #5B4651;
+  --code-operator: #5A4D5E;
   --code-meta: #1F6F5C;
 }

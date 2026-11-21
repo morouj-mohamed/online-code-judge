@@ -6,8 +6,8 @@
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
   <meta name="description" content="{{ site_name }}: an online judge that compiles your code and runs it on hidden tests inside real operating-system sandboxes.">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#150A10" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#FBF6F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0E0B10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#FAF7F9" media="(prefers-color-scheme: light)">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   {# Runs before the CSS paints, so the page never flashes the wrong theme. #}
   <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
