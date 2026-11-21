@@ -220,6 +220,9 @@ ALLOW_SIGNUP = os.environ.get("JUDGE_ALLOW_SIGNUP", "1") == "1"
 # ----------------------------------------------------------------------------
 # About the project (shown in the footer of every page) - EDIT THESE
 # ----------------------------------------------------------------------------
+# The name shown in the header, the page titles and the footer. Change it here
+# (or with the JUDGE_SITE_NAME environment variable): nothing else needs editing.
+SITE_NAME = os.environ.get("JUDGE_SITE_NAME", "Nova Coding Space")
 COURSE_NAME = os.environ.get("JUDGE_COURSE", "Operating Systems")
 INSTITUTION = os.environ.get("JUDGE_INSTITUTION", "")          # e.g. "Faculty of Computers, Cairo University"
 TEAM = os.environ.get("JUDGE_TEAM", "")                        # e.g. "Morouj Mohamed, Ahmed Ali, Sara Hassan"
@@ -229,6 +232,14 @@ REPOSITORY_URL = os.environ.get("JUDGE_REPO_URL", "https://github.com/morouj-moh
 # Folder for the self-signed TLS certificate (created on first start), so the
 # server answers https:// as well as http:// on the same port.
 TLS_DIR = os.environ.get("JUDGE_TLS_DIR", os.path.join(os.path.dirname(DB_PATH), "tls"))
+
+# ---------------------------------------------------------------------------
+# Verdict reactions (stickers / short videos after a verdict)
+# ---------------------------------------------------------------------------
+# Uploaded files live next to the database, so in Docker they are kept in the
+# same named volume and survive a rebuild.
+REACTIONS_DIR = os.environ.get("JUDGE_REACTIONS_DIR", os.path.join(os.path.dirname(DB_PATH), "reactions"))
+REACTION_MAX_MB = 8                # biggest picture / video an admin can upload
 
 # Creating student accounts in bulk (admin page): at most this many per upload.
 BULK_USERS_MAX = 300

@@ -1,5 +1,5 @@
 """
-app.py - the web API of ForkJudge (Flask + Server-Sent Events).
+app.py - the web API of the online judge (Flask + Server-Sent Events).
 
     python3 app.py            (inside Docker: docker compose up)
 
@@ -64,7 +64,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, stream_with_context
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, send_file, stream_with_context
 from werkzeug.exceptions import HTTPException
 from werkzeug.serving import WSGIRequestHandler, make_server
 
@@ -76,6 +76,7 @@ from judge import db as dbmod
 from judge import events as evmod
 from judge import problemstore
 from judge import queue as jqueue
+from judge import reactions as reactmod
 from judge import sandbox
 from judge import similarity
 from judge import worker as wmod
@@ -662,10 +663,12 @@ def create_app(service=None):
         # Test ZIPs are bigger than any other request: raise the limit for that one URL.
         if request.path.startswith("/api/admin/") and request.path.endswith("/tests"):
             request.max_content_length = problemstore.MAX_ZIP_BYTES + 1024 * 1024
+        elif request.path == "/api/admin/reactions" and request.method == "POST":
+            request.max_content_length = reactmod.MAX_BYTES + 64 * 1024
 
     @app.context_processor
     def template_globals():
-        return {"viewer": g.get("viewer"), "allow_signup": config.ALLOW_SIGNUP,
+        return {"viewer": g.get("viewer"), "allow_signup": config.ALLOW_SIGNUP, "site_name": config.SITE_NAME,
                 "about": {"course": config.COURSE_NAME, "institution": config.INSTITUTION,
                           "team": config.TEAM, "year": config.PROJECT_YEAR, "repo": config.REPOSITORY_URL}}
 
@@ -888,6 +891,15 @@ def create_app(service=None):
             abort(404)
         return render_template("admin_user.html", page="admin", username=username)
 
+    @app.get("/admin/reactions")
+    def page_admin_reactions():
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        if not g.viewer.is_admin:
+            abort(404)
+        return render_template("admin_reactions.html", page="admin", max_mb=config.REACTION_MAX_MB,
+                               max_per_verdict=reactmod.MAX_PER_VERDICT)
+
     @app.get("/admin/students")
     def page_admin_students():
         if not g.viewer.user:
@@ -945,7 +957,7 @@ def create_app(service=None):
 
     @app.get("/api")
     def api_index():
-        return jsonify({"name": "ForkJudge API", "endpoints": [
+        return jsonify({"name": f"{config.SITE_NAME} API", "endpoints": [
             "GET /api/problems", "GET /api/problems/<slug>", "POST /api/submit",
             "POST /api/run-sample", "GET /api/submissions", "GET /api/submissions/<id>",
             "POST /api/submissions/<id>/sample-run", "GET /api/stream",
@@ -1014,7 +1026,8 @@ def create_app(service=None):
         if row["contest_id"]:
             contest = service.db.get_contest_by_id(row["contest_id"])
             if contest:
-                data["contest"] = {"slug": contest["slug"], "title": contest["title"]}
+                data["contest"] = {"slug": contest["slug"], "title": contest["title"],
+                                   "exam_mode": bool(contest["exam_mode"])}
         if g.viewer.is_admin and row["user_id"]:
             owner = service.db.get_user(row["user_id"])
             data["username"] = owner["username"] if owner else None
@@ -1656,6 +1669,80 @@ def create_app(service=None):
                                            "by": g.viewer.user["username"]})
         return jsonify(result)
 
+    # ------------------------------------------------------------ reactions
+    def reactions_payload():
+        grouped = {key: [] for key in reactmod.KEYS}
+        for row in service.db.list_reactions():
+            if row["verdict"] in grouped:
+                grouped[row["verdict"]].append(reactmod.public(row))
+        return {"enabled": service.db.get_setting("reactions", "on") == "on",
+                "verdicts": reactmod.VERDICT_KEYS, "reactions": grouped}
+
+    @app.get("/api/reactions")
+    def api_reactions():
+        return jsonify(reactions_payload())
+
+    @app.get("/media/reactions/<int:reaction_id>")
+    def media_reaction(reaction_id):
+        row = service.db.get_reaction(reaction_id)
+        if row is None:
+            abort(404)
+        try:
+            path = reactmod.path_of(row["filename"])
+        except reactmod.ReactionError:
+            abort(404)
+        if not os.path.isfile(path):
+            abort(404)
+        # conditional=True: Range requests (needed to seek in videos) and 304s.
+        response = send_file(path, mimetype=row["mime"], conditional=True, max_age=86400)
+        response.headers["Content-Disposition"] = "inline"
+        return response
+
+    @app.get("/api/admin/reactions")
+    def admin_reactions():
+        require_admin()
+        payload = reactions_payload()
+        sizes = {row["id"]: row["size"] for row in service.db.list_reactions()}
+        for items in payload["reactions"].values():
+            for item in items:
+                item["size"] = sizes.get(item["id"], 0)
+        return jsonify(payload)
+
+    @app.post("/api/admin/reactions")
+    def admin_add_reaction():
+        require_admin()
+        verdict = request.form.get("verdict", "")
+        upload = request.files.get("file")
+        if upload is None:
+            raise ApiError(400, "missing_file", "send the picture or video as multipart form field 'file'")
+        if verdict in reactmod.KEYS and service.db.count_reactions(verdict) >= reactmod.MAX_PER_VERDICT:
+            raise ApiError(400, "too_many", f"at most {reactmod.MAX_PER_VERDICT} reactions per verdict")
+        try:
+            fields = reactmod.save(upload.read(reactmod.MAX_BYTES + 1), verdict, request.form.get("caption", ""))
+        except reactmod.ReactionError as exc:
+            raise ApiError(400, "invalid_reaction", str(exc)) from None
+        reaction_id = service.db.add_reaction(fields, g.viewer.user["username"])
+        return jsonify(reactmod.public(service.db.get_reaction(reaction_id))), 201
+
+    @app.delete("/api/admin/reactions/<int:reaction_id>")
+    def admin_delete_reaction(reaction_id):
+        require_admin()
+        row = service.db.get_reaction(reaction_id)
+        if row is None:
+            raise ApiError(404, "not_found", "no such reaction")
+        service.db.delete_reaction(reaction_id)
+        reactmod.delete_file(row["filename"])
+        return jsonify({"deleted": reaction_id})
+
+    @app.put("/api/admin/reactions/settings")
+    def admin_reaction_settings():
+        require_admin()
+        body = read_json()
+        if not isinstance(body.get("enabled"), bool):
+            raise ApiError(400, "missing_fields", "enabled must be true or false")
+        service.db.set_setting("reactions", "on" if body["enabled"] else "off")
+        return jsonify(reactions_payload())
+
     return app
 
 
@@ -1729,7 +1816,7 @@ def tls_context():
         try:
             # A system tool run once at start-up (never user code).
             subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825",
-                            "-keyout", key, "-out", cert, "-subj", "/CN=ForkJudge (local)",
+                            "-keyout", key, "-out", cert, "-subj", f"/CN={config.SITE_NAME} (local)",
                             "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
                            check=True, capture_output=True, timeout=60)
             os.chmod(key, 0o600)
@@ -1787,7 +1874,7 @@ def main():
     app = create_app(service)
     recovered = service.start()
     iso = sandbox.get_isolation()
-    print(f"ForkJudge API on http://{config.HOST}:{config.PORT}", flush=True)
+    print(f"{config.SITE_NAME} API on http://{config.HOST}:{config.PORT}", flush=True)
     print(f"  isolation : {iso.description}", flush=True)
     print(f"  workers   : {service.pool.n_workers}, queue capacity {service.pool.queue.capacity}, "
           f"re-queued after restart: {recovered}", flush=True)

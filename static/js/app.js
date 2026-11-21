@@ -71,6 +71,46 @@ export function boot() {
       el.textContent = "⌘";
     });
   }
+  watchScrollableTables();
+}
+
+/**
+ * A wide table scrolls sideways inside its .table-wrap on a small screen. A
+ * keyboard user must be able to reach it (Tab, then the arrow keys), and a
+ * screen reader needs a name for it. Tables are often added later by the page
+ * scripts, so new ones are picked up with a MutationObserver.
+ */
+function watchScrollableTables() {
+  const label = (wrap) => {
+    const card = wrap.closest("section, .card");
+    const heading = card?.querySelector("h2, h3, .card-title");
+    return `${heading ? heading.textContent.trim() : "Table"} (scrolls sideways)`;
+  };
+  const mark = () => {
+    document.querySelectorAll(".table-wrap").forEach((wrap) => {
+      const scrolls = wrap.scrollWidth > wrap.clientWidth + 1;
+      if (scrolls && !wrap.hasAttribute("tabindex")) {
+        wrap.tabIndex = 0;
+        wrap.setAttribute("role", "region");
+        if (!wrap.hasAttribute("aria-label")) wrap.setAttribute("aria-label", label(wrap));
+        wrap.dataset.autoRegion = "1";
+      } else if (!scrolls && wrap.dataset.autoRegion) {
+        wrap.removeAttribute("tabindex");
+        wrap.removeAttribute("role");
+        wrap.removeAttribute("aria-label");
+        delete wrap.dataset.autoRegion;
+      }
+    });
+  };
+  let queued = false;
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; mark(); });
+  };
+  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener("resize", schedule);
+  schedule();
 }
 
 /** Show a value in an aria-live region (for screen readers). */

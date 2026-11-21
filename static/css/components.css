@@ -832,7 +832,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .limits-row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 
 /* =========================================================== result page === */
-.result-grid { display: grid; gap: var(--s-5); }
+.result-grid { display: grid; gap: var(--s-5); grid-template-columns: minmax(0, 1fr); }
 
 .banner {
   position: relative;
@@ -875,7 +875,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .banner.is-accepted { box-shadow: var(--shadow-2), 0 0 0 1px color-mix(in srgb, var(--v-ok) 30%, transparent),
                                    0 0 48px -8px color-mix(in srgb, var(--v-ok) 40%, transparent); }
 @media (max-width: 720px) {
-  .banner { grid-template-columns: auto 1fr; padding: var(--s-5); gap: var(--s-4); }
+  .banner { grid-template-columns: auto minmax(0, 1fr); padding: var(--s-5); gap: var(--s-4); }
   .banner-meta { grid-column: 1 / -1; justify-items: start; }
   .banner-icon { width: 52px; height: 52px; }
   .banner-title { font-size: var(--text-xl); }
@@ -1540,3 +1540,111 @@ details.disclosure .code-view { margin: 0 var(--s-4) var(--s-4); border: var(--h
 .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
 .sources li { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); border: var(--hairline) solid var(--border); border-radius: var(--r-sm); background: var(--bg-elev); font-size: var(--text-sm); }
 .sources code { font-size: var(--text-xs); }
+
+/* ===================================================== verdict reactions === */
+/* A card in the bottom corner with a sticker or a short video. It is not a
+   dialog: the page stays usable, and it closes by itself (the thin bar at the
+   bottom shows the time left; it stops while hovered or focused). */
+.reaction-card {
+  position: fixed;
+  right: var(--s-5);
+  bottom: var(--s-5);
+  z-index: calc(var(--z-header) + 5);
+  width: min(320px, calc(100vw - 2 * var(--s-4)));
+  overflow: hidden;
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-3);
+  animation: reaction-in 420ms var(--ease-out) both;
+}
+.reaction-card.is-leaving { animation: reaction-out 260ms var(--ease-out) both; }
+@keyframes reaction-in {
+  0% { opacity: 0; transform: translateY(24px) scale(0.92) rotate(2deg); }
+  70% { opacity: 1; transform: translateY(-4px) scale(1.02) rotate(-0.5deg); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes reaction-out { to { opacity: 0; transform: translateY(16px) scale(0.96); } }
+.reaction-close { position: absolute; top: var(--s-2); right: var(--s-2); z-index: 1; background: var(--surface-2); }
+.reaction-stage {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: var(--s-3) var(--s-3) 0;
+  background:
+    radial-gradient(circle at 50% 60%, var(--accent-soft), transparent 70%),
+    var(--surface-1);
+}
+.reaction-stage .sticker { width: 100%; max-width: 240px; height: auto; overflow: visible; }
+.reaction-media { display: block; max-width: 100%; max-height: 240px; border-radius: var(--r-md); object-fit: contain; }
+.reaction-stage:has(.reaction-media) { padding: var(--s-3); }
+.reaction-text { display: grid; gap: var(--s-1); padding: var(--s-3) var(--s-4) var(--s-4); }
+.reaction-verdict { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--text-sm); }
+.reaction-caption { color: var(--text); font-weight: 550; }
+.reaction-actions { margin-top: var(--s-2); }
+.reaction-actions .js-never { color: var(--text-muted); }
+.reaction-timer {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  animation: reaction-timer var(--reaction-ms, 7000ms) linear forwards;
+}
+.reaction-card.is-paused .reaction-timer { animation-play-state: paused; }
+@keyframes reaction-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (max-width: 640px) {
+  .reaction-card { right: var(--s-3); left: var(--s-3); bottom: var(--s-3); width: auto; }
+  .reaction-stage { min-height: 140px; }
+  .reaction-stage .sticker { max-width: 180px; }
+}
+
+/* sticker animations (SVG groups) */
+.sticker .stk-burst { animation: stk-burst 600ms var(--ease-out) both, stk-turn 9s linear 600ms infinite; }
+.sticker .stk-word { animation: stk-word 520ms cubic-bezier(.2, 1.6, .4, 1) 180ms both; transform-origin: 110px 30px; }
+.sticker .stk-jump { animation: stk-jump 900ms ease-in-out 300ms infinite; }
+.sticker .stk-twinkle { animation: stk-twinkle 1.2s ease-in-out infinite; transform-origin: 110px 110px; }
+.sticker .stk-tilt { animation: stk-tilt 1.8s ease-in-out infinite; }
+.sticker .stk-float { animation: stk-float 1.6s ease-in-out infinite; }
+.sticker .stk-zzz { animation: stk-zzz 2.2s ease-in-out infinite; }
+.sticker .stk-wobble { animation: stk-wobble 1.4s ease-in-out infinite; }
+.sticker .stk-puff { animation: stk-puff 1.3s ease-in-out infinite; }
+.sticker .stk-shake { animation: stk-shake 450ms linear 3, stk-tilt 2.4s ease-in-out 1.4s infinite; }
+.sticker .stk-spin { animation: stk-spin 1.1s linear infinite; }
+.sticker .stk-smoke { animation: stk-zzz 2.6s ease-in-out infinite; }
+.sticker .stk-drop { animation: stk-drop 1.4s ease-in infinite; }
+@keyframes stk-burst { from { transform: scale(0.3) rotate(-30deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes stk-turn { to { transform: rotate(360deg); } }
+@keyframes stk-word { from { transform: scale(0.2) rotate(-14deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes stk-jump { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-12px); } 60% { transform: translateY(-12px) scaleY(1.03); } }
+@keyframes stk-twinkle { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.9); } }
+@keyframes stk-tilt { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes stk-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes stk-zzz { 0% { transform: translate(0, 4px); opacity: 0.2; } 50% { opacity: 1; } 100% { transform: translate(6px, -10px); opacity: 0; } }
+@keyframes stk-wobble { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes stk-puff { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06, 1.04); } }
+@keyframes stk-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px) rotate(-3deg); } 75% { transform: translateX(5px) rotate(3deg); } }
+@keyframes stk-spin { to { transform: rotate(360deg); } }
+@keyframes stk-drop { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+/* Reduce motion: no animation at all, so the sticker shows its resting pose
+   (the floating "Zzz" and smoke would otherwise end invisible). */
+@media (prefers-reduced-motion: reduce) {
+  .sticker *, .reaction-timer { animation: none !important; }
+}
+
+/* admin: verdict reactions */
+.reaction-admin-grid { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); margin-top: var(--s-5); }
+.reaction-admin { display: grid; gap: var(--s-3); padding: var(--s-4); align-content: start; min-width: 0; }
+.reaction-items { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.reaction-item { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: var(--s-3); align-items: center;
+  padding: var(--s-2); border: var(--hairline) solid var(--border); border-radius: var(--r-md); background: var(--surface-1); }
+.reaction-item.is-unused .reaction-thumb { opacity: 0.55; }
+.reaction-item-text { display: grid; gap: 2px; min-width: 0; font-size: var(--text-sm); }
+.reaction-item-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reaction-thumb { width: 72px; height: 64px; display: grid; place-items: center; overflow: hidden; border-radius: var(--r-sm); background: var(--surface-sunken); }
+.reaction-thumb img, .reaction-thumb video { width: 100%; height: 100%; object-fit: cover; }
+.reaction-thumb .sticker { width: 72px; height: 64px; }
+.reaction-thumb .sticker * { animation: none !important; }
+.reaction-upload { display: grid; gap: var(--s-2); grid-template-columns: minmax(0, 1fr) auto; }
+.reaction-upload input { min-width: 0; width: 100%; }
+.reaction-upload input[type="file"] { grid-column: 1 / -1; }
+/* The run picker never grows past the panel, however long a run's name is. */
+.timeline-controls .select { flex: 1 1 220px; min-width: 0; max-width: 100%; text-overflow: ellipsis; }

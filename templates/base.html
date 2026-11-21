@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>{% block title %}ForkJudge{% endblock %}</title>
-  <meta name="description" content="ForkJudge: an online judge that compiles your code and runs it on hidden tests inside real operating-system sandboxes.">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <meta name="description" content="{{ site_name }}: an online judge that compiles your code and runs it on hidden tests inside real operating-system sandboxes.">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#0B1210" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#F6F6F3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#150A10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#FBF6F8" media="(prefers-color-scheme: light)">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   {# Runs before the CSS paints, so the page never flashes the wrong theme. #}
   <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
@@ -17,14 +17,14 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}" data-page="{{ page }}" data-user="{{ viewer.user.username if viewer and viewer.user else '' }}" data-admin="{{ '1' if viewer and viewer.is_admin else '0' }}">
+<body class="{% block body_class %}{% endblock %}" data-page="{{ page }}" data-user="{{ viewer.user.username if viewer and viewer.user else '' }}" data-admin="{{ '1' if viewer and viewer.is_admin else '0' }}" data-site-name="{{ site_name }}">
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="site-header">
     <div class="{% block header_class %}container{% endblock %}">
-      <a class="brand" href="/" aria-label="ForkJudge, home">
+      <a class="brand" href="/" aria-label="{{ site_name }}, home">
         <span class="brand-mark"><span data-icon="logo" data-size="18"></span></span>
-        <span class="brand-name">ForkJudge <small>v5</small></span>
+        <span class="brand-name">{{ site_name }} <small>v5</small></span>
       </a>
       <nav class="nav" aria-label="Main">
         <a href="/" {% if page in ('problems', 'problem') %}aria-current="page"{% endif %}>
@@ -81,7 +81,7 @@
 
   <footer class="site-footer">
     <div class="container">
-      <span>ForkJudge &middot; every run is a real <span class="mono">fork()</span> + <span class="mono">execve()</span> in a sandbox</span>
+      <span>{{ site_name }} &middot; every run is a real <span class="mono">fork()</span> + <span class="mono">execve()</span> in a sandbox</span>
       <span class="footer-about">
         <span>{{ about.course }} course project{% if about.institution %} &middot; {{ about.institution }}{% endif %} &middot; {{ about.year }}</span>
         {% if about.team %}<span>by {{ about.team }}</span>{% endif %}

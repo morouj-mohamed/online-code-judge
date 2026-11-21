@@ -4,6 +4,8 @@
 // filter, arrow keys to move, Enter to go. Items: pages, every problem
 // (loaded on first open) and a few actions.
 
+import { toast } from "./toast.js";
+import { reactionsEnabledHere, setReactionsHere } from "./reactions.js";
 import { api } from "./api.js";
 import { escapeHtml } from "./format.js";
 import { icon } from "./icons.js";
@@ -24,6 +26,16 @@ const PAGES = [
 ];
 const ACTIONS = [
   { group: "Actions", label: "Toggle light / dark theme", icon: "sun", run: () => toggleTheme() },
+  {
+    group: "Actions", icon: "smile",
+    get label() { return reactionsEnabledHere() ? "Turn verdict reactions off" : "Turn verdict reactions on"; },
+    hint: "Stickers after a verdict",
+    run: () => {
+      const on = !reactionsEnabledHere();
+      setReactionsHere(on);
+      toast({ title: on ? "Reactions on" : "Reactions off", message: on ? "A sticker appears when a verdict arrives." : "No more stickers in this browser.", kind: "info" });
+    },
+  },
 ];
 
 /** Subsequence match: "frm" matches "Fibonacci Modulo". Lower score = better. */

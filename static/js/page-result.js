@@ -9,6 +9,7 @@
 //      banner, count the numbers up, and for Wrong Answer run the code on the
 //      PUBLIC sample to show a real diff.
 
+import { showReaction } from "./reactions.js";
 import { api, describeError } from "./api.js";
 import { announce, boot } from "./app.js";
 import { renderDiff } from "./diff.js";
@@ -374,10 +375,13 @@ async function finalize() {
   }
   if (state.status === "Wrong Answer") loadSampleDiff();
   recordVerdict(state.sub.problem, state.status);
+  // A sticker / short video, only when the verdict arrived live (not when an
+  // old submission is opened again) and never during an exam.
+  if (state.sawLive) showReaction(state.status, { examMode: Boolean(state.sub.contest?.exam_mode) });
   body.setAttribute("aria-busy", "false");
   const { title, sub } = bannerText();
   announce(`Verdict: ${title}. ${sub}`);
-  document.title = `${verdictInfo(state.status).short} · #${id} · ForkJudge`;
+  document.title = `${verdictInfo(state.status).short} · #${id} · ${document.body.dataset.siteName}`;
 }
 
 // ================================================================= data ====

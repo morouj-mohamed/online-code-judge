@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Edit contest' if slug else 'New contest' }} · Admin · ForkJudge{% endblock %}
+{% block title %}{{ 'Edit contest' if slug else 'New contest' }} · Admin · {{ site_name }}{% endblock %}
 {% block content %}
 <div class="container page" id="admin-contest" data-slug="{{ slug }}">
   <div class="page-head">

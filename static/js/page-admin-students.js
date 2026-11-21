@@ -59,7 +59,7 @@ function renderResult(data) {
   created = data.created;
   const site = location.origin;
   document.querySelector(".js-cards").innerHTML = created.map((u) => `<li class="login-card">
-      <p class="eyebrow">ForkJudge</p>
+      <p class="eyebrow">${escapeHtml(document.body.dataset.siteName || "")}</p>
       <p class="lc-row"><span>Website</span><span class="mono">${escapeHtml(site)}</span></p>
       <p class="lc-row"><span>Username</span><strong class="mono">${escapeHtml(u.username)}</strong></p>
       <p class="lc-row"><span>Password</span><strong class="mono">${escapeHtml(u.password)}</strong></p>

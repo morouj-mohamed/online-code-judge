@@ -224,7 +224,7 @@ main { flex: 1 0 auto; }
 /* The header shrinks in steps so it always fits on one line. Labels that
    disappear are only VISUALLY hidden: screen readers still read "Problems",
    "Log in", the user name... so every icon-only button keeps its name. */
-@media (max-width: 1180px) {
+@media (max-width: 1240px) {
   .palette-trigger .kbd-hint, .role-pill { display: none; }
   .palette-trigger .label, .user-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
@@ -238,7 +238,7 @@ main { flex: 1 0 auto; }
   .login-link { width: var(--touch); padding: 0; justify-content: center; }
 }
 /* Phones: 40 px targets (well above the 24 px WCAG minimum) and tight gaps. */
-@media (max-width: 580px) {
+@media (max-width: 640px) {
   .brand-name { display: none; }
   .site-header .container, .site-header .bar { gap: var(--s-1); padding-inline: var(--s-3); }
   .nav { gap: 2px; }

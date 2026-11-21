@@ -1,4 +1,4 @@
-# Development container for ForkJudge.
+# Development container for the online judge.
 #
 #   docker compose build
 #   docker compose up                       # the API on http://localhost:5000

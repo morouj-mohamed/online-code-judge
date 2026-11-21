@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Verdict reactions · Admin · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="container page" id="admin-reactions">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/admin"><span data-icon="arrow-left" data-size="14"></span>Admin</a></nav>
+      <h1>Verdict reactions</h1>
+      <p class="muted">A sticker or a short video appears when a verdict arrives. Every verdict has a built-in comic sticker;
+        upload your own pictures, GIFs or videos to use them instead (one is picked at random). Never shown during an exam.</p>
+    </div>
+  </div>
+
+  <section class="card card-pad stack" aria-labelledby="sw-title">
+    <h2 id="sw-title" class="card-title">For the whole site</h2>
+    <label class="check"><input type="checkbox" class="js-enabled" checked>
+      <span><strong>Show reactions after a verdict</strong><br>Students can still turn them off for themselves (Ctrl K).</span></label>
+    <p class="subtle hint">PNG, JPEG, GIF, WebP, MP4 or WebM · up to {{ max_mb }} MB · up to {{ max_per_verdict }} per verdict.
+      Videos start muted; the student can turn the sound on. Use only pictures and videos you made or are allowed to use.</p>
+  </section>
+
+  <div class="reaction-admin-grid js-verdicts" aria-busy="true"></div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin-reactions.js') }}"></script>{% endblock %}

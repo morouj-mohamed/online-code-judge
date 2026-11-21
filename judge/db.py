@@ -152,6 +152,25 @@ CREATE TABLE IF NOT EXISTS contest_locks (
 );
 CREATE INDEX IF NOT EXISTS idx_contest_locks ON contest_locks(contest_id, user_id);
 
+-- Stickers / short videos an admin uploaded for a verdict (files on disk).
+CREATE TABLE IF NOT EXISTS reactions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    verdict      TEXT    NOT NULL,
+    filename     TEXT    NOT NULL UNIQUE,
+    mime         TEXT    NOT NULL,
+    kind         TEXT    NOT NULL,          -- 'image' or 'video'
+    caption      TEXT    NOT NULL DEFAULT '',
+    size         INTEGER NOT NULL,
+    created_at   REAL    NOT NULL,
+    created_by   TEXT
+);
+
+-- Small site-wide switches (key -> value), e.g. reactions on / off.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS contest_problems (
     contest_id   INTEGER NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
     problem_slug TEXT    NOT NULL,
@@ -547,6 +566,38 @@ class Database:
                 "SELECT id FROM submissions WHERE status = ? ORDER BY id", (config.PENDING,)).fetchall()]
 
     # -------------------------------------------------------------- tests, events
+    # ------------------------------------------------------------ reactions
+    def add_reaction(self, fields, created_by):
+        with self._tx() as conn:
+            cur = conn.execute(
+                "INSERT INTO reactions (verdict, filename, mime, kind, caption, size, created_at, created_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (fields["verdict"], fields["filename"], fields["mime"], fields["kind"], fields["caption"],
+                 fields["size"], time.time(), created_by))
+            return cur.lastrowid
+
+    def list_reactions(self):
+        return self._all("SELECT * FROM reactions ORDER BY verdict, id")
+
+    def get_reaction(self, reaction_id):
+        return self._one("SELECT * FROM reactions WHERE id = ?", (reaction_id,))
+
+    def count_reactions(self, verdict):
+        return self._one("SELECT COUNT(*) AS n FROM reactions WHERE verdict = ?", (verdict,))["n"]
+
+    def delete_reaction(self, reaction_id):
+        with self._tx() as conn:
+            conn.execute("DELETE FROM reactions WHERE id = ?", (reaction_id,))
+
+    def get_setting(self, key, default=None):
+        row = self._one("SELECT value FROM settings WHERE key = ?", (key,))
+        return row["value"] if row else default
+
+    def set_setting(self, key, value):
+        with self._tx() as conn:
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                         "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
+
     def get_test_results(self, submission_id):
         return self._all("SELECT * FROM test_results WHERE submission_id = ? ORDER BY test_index",
                          (submission_id,))
