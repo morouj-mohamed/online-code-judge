@@ -377,7 +377,7 @@ async function finalize() {
   body.setAttribute("aria-busy", "false");
   const { title, sub } = bannerText();
   announce(`Verdict: ${title}. ${sub}`);
-  document.title = `${verdictInfo(state.status).short} · #${id} · Online Code Judge`;
+  document.title = `${verdictInfo(state.status).short} · #${id} · ForkJudge`;
 }
 
 // ================================================================= data ====

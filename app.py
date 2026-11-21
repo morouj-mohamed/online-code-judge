@@ -1,5 +1,5 @@
 """
-app.py - the web API of the Online Code Judge (Flask + Server-Sent Events).
+app.py - the web API of ForkJudge (Flask + Server-Sent Events).
 
     python3 app.py            (inside Docker: docker compose up)
 
@@ -945,7 +945,7 @@ def create_app(service=None):
 
     @app.get("/api")
     def api_index():
-        return jsonify({"name": "Online Code Judge API", "endpoints": [
+        return jsonify({"name": "ForkJudge API", "endpoints": [
             "GET /api/problems", "GET /api/problems/<slug>", "POST /api/submit",
             "POST /api/run-sample", "GET /api/submissions", "GET /api/submissions/<id>",
             "POST /api/submissions/<id>/sample-run", "GET /api/stream",
@@ -1729,7 +1729,7 @@ def tls_context():
         try:
             # A system tool run once at start-up (never user code).
             subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825",
-                            "-keyout", key, "-out", cert, "-subj", "/CN=Online Code Judge (local)",
+                            "-keyout", key, "-out", cert, "-subj", "/CN=ForkJudge (local)",
                             "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
                            check=True, capture_output=True, timeout=60)
             os.chmod(key, 0o600)
@@ -1787,7 +1787,7 @@ def main():
     app = create_app(service)
     recovered = service.start()
     iso = sandbox.get_isolation()
-    print(f"Online Code Judge API on http://{config.HOST}:{config.PORT}", flush=True)
+    print(f"ForkJudge API on http://{config.HOST}:{config.PORT}", flush=True)
     print(f"  isolation : {iso.description}", flush=True)
     print(f"  workers   : {service.pool.n_workers}, queue capacity {service.pool.queue.capacity}, "
           f"re-queued after restart: {recovered}", flush=True)

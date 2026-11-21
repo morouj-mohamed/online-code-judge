@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>{% block title %}Online Code Judge{% endblock %}</title>
-  <meta name="description" content="An online judge that compiles your code and runs it on hidden tests inside real operating-system sandboxes.">
+  <title>{% block title %}ForkJudge{% endblock %}</title>
+  <meta name="description" content="ForkJudge: an online judge that compiles your code and runs it on hidden tests inside real operating-system sandboxes.">
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#0B1210" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#F6F6F3" media="(prefers-color-scheme: light)">
@@ -22,9 +22,9 @@
 
   <header class="site-header">
     <div class="{% block header_class %}container{% endblock %}">
-      <a class="brand" href="/" aria-label="Online Code Judge, home">
+      <a class="brand" href="/" aria-label="ForkJudge, home">
         <span class="brand-mark"><span data-icon="logo" data-size="18"></span></span>
-        <span class="brand-name">Code Judge <small>v4</small></span>
+        <span class="brand-name">ForkJudge <small>v5</small></span>
       </a>
       <nav class="nav" aria-label="Main">
         <a href="/" {% if page in ('problems', 'problem') %}aria-current="page"{% endif %}>
@@ -81,7 +81,7 @@
 
   <footer class="site-footer">
     <div class="container">
-      <span>Online Code Judge &middot; every run is a real <span class="mono">fork()</span> + <span class="mono">execve()</span> in a sandbox</span>
+      <span>ForkJudge &middot; every run is a real <span class="mono">fork()</span> + <span class="mono">execve()</span> in a sandbox</span>
       <span class="footer-about">
         <span>{{ about.course }} course project{% if about.institution %} &middot; {{ about.institution }}{% endif %} &middot; {{ about.year }}</span>
         {% if about.team %}<span>by {{ about.team }}</span>{% endif %}

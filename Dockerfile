@@ -1,4 +1,4 @@
-# Development environment for the Online Code Judge.
+# Development environment for ForkJudge.
 #
 # It contains everything the judge needs to run real code:
 #   gcc, g++        compile C and C++ (we link statically, see config.py)
