@@ -32,6 +32,7 @@ import time
 import zipfile
 
 import config
+from judge import compare
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 INDEX_RE = re.compile(r"^[A-Z0-9]{1,3}$")
@@ -173,6 +174,10 @@ def clean_fields(data, creating):
         "time_limit_ms": _int(data.get("time_limit_ms"), "time limit (ms)", 100, 10000),
         "memory_limit_mb": _int(data.get("memory_limit_mb"), "memory limit (MB)", 16, 1024),
     }
+    try:
+        meta["checker"] = compare.normalize_checker(data.get("checker"))
+    except ValueError as exc:
+        raise ProblemStoreError(str(exc)) from None
     statement = _text(data.get("statement"), "statement")
     sample_in = _text(data.get("sample_input", ""), "sample input", allow_empty=True)
     sample_out = _text(data.get("sample_output"), "sample output")
@@ -217,7 +222,8 @@ def save_problem(data, slug=None, creating=False):
                 raise ProblemStoreError(f"unknown problem: {slug}")
             meta = read_meta(slug)
             limits_changed = (meta.get("time_limit_ms") != fields["time_limit_ms"]
-                              or meta.get("memory_limit_mb") != fields["memory_limit_mb"])
+                              or meta.get("memory_limit_mb") != fields["memory_limit_mb"]
+                              or compare.normalize_checker(meta.get("checker")) != fields["checker"])
             meta.update(fields)
             if limits_changed:
                 meta.pop("validation", None)        # an old validation no longer proves anything
@@ -345,3 +351,81 @@ def replace_tests(slug, zip_bytes):
             shutil.rmtree(staging, ignore_errors=True)
             raise
     return {"count": len(numbers), "total_bytes": total}
+
+
+# ---------------------------------------------------------------------- images
+# Pictures used in a statement live in problems/<slug>/assets/. A statement
+# shows one with a line like:   ![The graph of sample 1](graph.png)
+# Only raster images are accepted (the type is read from the file's first
+# bytes, never from its name): an SVG could carry a script.
+ASSET_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,59}\.(png|jpg|gif|webp)$")
+ASSET_MAX_BYTES = 2 * 1024 * 1024
+ASSET_MAX_COUNT = 30
+_IMAGE_TYPES = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}
+
+
+def _sniff_image(head):
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def assets_dir(slug):
+    return os.path.join(problem_dir(slug), "assets")
+
+
+def asset_path(slug, name):
+    """Path of an existing image, or None. The name is checked, so '../x' never leaves the folder."""
+    if not ASSET_NAME_RE.match(name or ""):
+        return None
+    path = os.path.join(assets_dir(slug), name)
+    return path if os.path.isfile(path) else None
+
+
+def asset_mime(name):
+    return _IMAGE_TYPES[name.rsplit(".", 1)[1]]
+
+
+def list_assets(slug):
+    folder = assets_dir(slug)
+    if not os.path.isdir(folder):
+        return []
+    return [{"name": n, "size": os.path.getsize(os.path.join(folder, n))}
+            for n in sorted(os.listdir(folder)) if ASSET_NAME_RE.match(n)]
+
+
+def save_asset(slug, data, original_name):
+    """Store an uploaded image under a clean name derived from the original one. Returns the name."""
+    if not data:
+        raise ProblemStoreError("the file is empty")
+    if len(data) > ASSET_MAX_BYTES:
+        raise ProblemStoreError("an image can be at most 2 MB")
+    kind = _sniff_image(data[:16])
+    if kind is None:
+        raise ProblemStoreError("only PNG, JPEG, GIF or WebP images are accepted")
+    stem = os.path.splitext(os.path.basename(original_name or "image"))[0].lower()
+    stem = re.sub(r"[^a-z0-9._-]+", "-", stem).strip("-.") or "image"
+    name = f"{stem[:50]}.{kind}"
+    with _write_lock:
+        folder = assets_dir(slug)
+        os.makedirs(folder, exist_ok=True)
+        existing = {a["name"] for a in list_assets(slug)}
+        if name not in existing and len(existing) >= ASSET_MAX_COUNT:
+            raise ProblemStoreError(f"at most {ASSET_MAX_COUNT} images per problem")
+        _atomic_write(os.path.join(folder, name), data)      # same name: the image is replaced
+    return name
+
+
+def delete_asset(slug, name):
+    path = asset_path(slug, name)
+    if path is None:
+        raise ProblemStoreError("no such image")
+    with _write_lock:
+        os.unlink(path)
+

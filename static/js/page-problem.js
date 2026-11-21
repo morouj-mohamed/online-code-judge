@@ -6,6 +6,7 @@
 //   * Run sample (Ctrl+Enter) shows the result inline, with a diff on WA
 //   * Submit (Ctrl+Shift+Enter) queues the code and opens the live result page
 
+import { watchAnnouncements } from "./announcements.js";
 import { api, describeError } from "./api.js";
 import { announce, boot } from "./app.js";
 import { renderDiff } from "./diff.js";
@@ -27,6 +28,8 @@ const workspace = document.getElementById("workspace");
 const slug = workspace.dataset.slug;
 // Opened from a contest? Then submissions go to that contest (and count for its standings).
 const contest = workspace.dataset.contest || null;
+// Inside a contest: the teacher's announcements arrive here too (as toasts).
+if (contest) watchAnnouncements(contest, { toastNew: true });
 const examMode = workspace.dataset.exam === "1" && document.body.dataset.admin !== "1";
 let contestPhase = null;
 let examLocked = false;
@@ -59,7 +62,8 @@ function renderLimits() {
     <span class="chip" title="Memory limit for ${LANGUAGE_LABELS[language]}">${icon("memory", { size: 13 })}
       Memory <span class="num">${lim.memory_mb} MB</span></span>
     <span class="chip">${icon("list-checks", { size: 13 })}<span class="num">${problem.tests_count}</span> hidden tests</span>
-    ${language === "python" ? `<span class="chip" title="Interpreted languages get more time and memory">${icon("info", { size: 13 })}Python limits are scaled up</span>` : ""}`;
+    ${language === "python" ? `<span class="chip" title="Interpreted languages get more time and memory">${icon("info", { size: 13 })}Python limits are scaled up</span>` : ""}
+    ${problem.checker_note ? `<span class="chip" title="How your output is compared">${icon("list-checks", { size: 13 })}${escapeHtml(problem.checker_note)}</span>` : ""}`;
 }
 
 function ioBlock(label, text, id) {
@@ -72,7 +76,8 @@ function ioBlock(label, text, id) {
 
 function renderStatement() {
   const article = document.querySelector(".js-statement");
-  article.innerHTML = renderMarkdown(problem.statement, { skipSections: ["Example", "Examples", "Limits"] });
+  article.innerHTML = renderMarkdown(problem.statement, { skipSections: ["Example", "Examples", "Limits"],
+    assetBase: `/problems/${encodeURIComponent(problem.slug)}/assets` });
   article.setAttribute("aria-busy", "false");
   document.querySelector(".js-samples").innerHTML = `
     <h2 class="eyebrow">Sample</h2>

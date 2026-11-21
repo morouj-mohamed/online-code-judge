@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/make_problems.py - (re)generate the five problems under problems/.
+tools/make_problems.py - (re)generate the six problems under problems/.
 
 Every expected output is computed here by a short, obviously-correct Python
 function. The judge then checks real C / C++ / Python solutions against these
@@ -74,6 +74,7 @@ assert prev_prime(10 ** 12) == 999999999989
 # ----------------------------------------------------------------------------
 # Shown by the web UI (Phase 4): the letter, a difficulty and topic tags.
 DISPLAY = {
+    "average":        {"index": "F", "difficulty": "Easy",   "tags": ["math", "floating-point"]},
     "sum-two":        {"index": "A", "difficulty": "Easy",   "tags": ["math", "implementation", "overflow"]},
     "max-array":      {"index": "B", "difficulty": "Easy",   "tags": ["arrays", "implementation", "fast-io"]},
     "reverse-string": {"index": "C", "difficulty": "Easy",   "tags": ["strings", "implementation"]},
@@ -83,7 +84,7 @@ DISPLAY = {
 }
 
 
-def write_problem(slug, title, statement, tests, time_limit_ms=1000, memory_limit_mb=256):
+def write_problem(slug, title, statement, tests, time_limit_ms=1000, memory_limit_mb=256, checker=None):
     """tests is a list of (input_text, output_text)."""
     folder = os.path.join(PROBLEMS, slug)
     tests_dir = os.path.join(folder, "tests")
@@ -95,7 +96,8 @@ def write_problem(slug, title, statement, tests, time_limit_ms=1000, memory_limi
         display = DISPLAY.get(slug, {})
         json.dump({"slug": slug, "index": display.get("index", ""), "title": title,
                    "difficulty": display.get("difficulty", "Easy"), "tags": display.get("tags", []),
-                   "time_limit_ms": time_limit_ms, "memory_limit_mb": memory_limit_mb}, f, indent=2)
+                   "time_limit_ms": time_limit_ms, "memory_limit_mb": memory_limit_mb,
+                   **({"checker": checker} if checker else {})}, f, indent=2)
         f.write("\n")
     with open(os.path.join(folder, "statement.md"), "w", encoding="utf-8") as f:
         f.write(statement.strip() + "\n")
@@ -351,9 +353,55 @@ Time limit: 1 second. Memory limit: 256 MB.
     write_problem("fib-mod", "Fibonacci Modulo", statement, tests)
 
 
+# ----------------------------------------------------------------------------
+# F - Average of Numbers (real-number answer, checked with a tolerance)
+# ----------------------------------------------------------------------------
+def problem_f():
+    from fractions import Fraction
+    rng = random.Random(2026)                    # fixed seed: the same tests every time
+    cases = [[1, 2], [7], [1, 2, 2], [-3, 4], [10 ** 9, 10 ** 9, 10 ** 9 - 1], [1, 1, 1, 1, 1, 1, 2]]
+    cases.append([rng.randint(-10 ** 9, 10 ** 9) for _ in range(1000)])
+    cases.append([rng.randint(0, 10) for _ in range(100000)])
+    cases.append([rng.randint(-10 ** 9, 10 ** 9) for _ in range(100000)])
+    tests = []
+    for numbers in cases:
+        mean = Fraction(sum(numbers), len(numbers))
+        tests.append((f"{len(numbers)}\n{' '.join(map(str, numbers))}\n", f"{float(mean):.10f}\n"))
+    statement = """
+# F. Average of Numbers
+
+Given `n` integers, print their average (arithmetic mean).
+
+## Input
+The first line contains `n` (`1 <= n <= 10^5`). The second line contains `n` integers
+`a_i` (`-10^9 <= a_i <= 10^9`).
+
+## Output
+One real number: the average. Your answer is accepted if its absolute or relative error
+is at most `10^-6`, so `1.5`, `1.500000` and `1.5000000001` are all correct.
+
+## Example
+Input
+```
+2
+1 2
+```
+Output
+```
+1.5000000000
+```
+
+## Notes
+The sum of `10^5` numbers of size `10^9` does not fit in a 32-bit `int`: use `long long`.
+"""
+    write_problem("average", "Average of Numbers", statement, tests,
+                  checker={"type": "float", "abs": 1e-6, "rel": 1e-6})
+
+
 if __name__ == "__main__":
     problem_a()
     problem_b()
     problem_c()
     problem_d()
     problem_e()
+    problem_f()

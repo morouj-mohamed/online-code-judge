@@ -400,17 +400,36 @@ function renderHeader() {
   document.querySelector(".js-subtitle").innerHTML =
     `${s.username ? `by <a href="/admin/users/${encodeURIComponent(s.username)}">${escapeHtml(s.username)}</a> · ` : ""}` +
     `${escapeHtml(LANGUAGE_LABELS[s.language] || s.language)} · submitted <time datetime="${new Date(s.created_at * 1000).toISOString()}">${escapeHtml(absoluteTime(s.created_at))}</time>` +
-    `${s.contest ? ` · in <a href="/contests/${encodeURIComponent(s.contest.slug)}">${escapeHtml(s.contest.title)}</a>` : ""}`;
+    `${s.contest ? ` · in <a href="/contests/${encodeURIComponent(s.contest.slug)}">${escapeHtml(s.contest.title)}</a>` : ""}` +
+    `${s.rejudged ? ` · <span class="chip" title="An admin judged this submission again">${icon("refresh", { size: 13 })}Rejudged${s.previous_status ? ` · was ${escapeHtml(s.previous_status)}` : ""}</span>` : ""}`;
   if (typeof s.source === "string") {
     const lines = s.source.split("\n");
     body.querySelector(".js-source").innerHTML = lines.map((line, i) =>
       `<div class="diff-line"><span class="ln">${i + 1}</span><span class="tx">${escapeHtml(line) || " "}</span></div>`).join("");
     body.querySelector(".js-src-meta").textContent = `${lines.length} lines`;
   }
+  const isAdmin = document.body.dataset.admin === "1";
   document.querySelector(".js-actions").innerHTML = `
+    ${isAdmin ? `<button class="btn js-rejudge" type="button">${icon("refresh")}<span class="btn-label-idle">Rejudge</span><span class="btn-label-busy">Queuing…</span></button>` : ""}
     <a class="btn" href="/submissions">${icon("list")}All submissions</a>
     <a class="btn btn-primary" href="/problems/${encodeURIComponent(s.problem)}${s.contest ? `?contest=${encodeURIComponent(s.contest.slug)}` : ""}">${icon("file-code")}Edit &amp; resubmit</a>`;
 }
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest(".js-rejudge");
+  if (!button) return;
+  if (!window.confirm("Judge this submission again with the current tests?")) return;
+  button.classList.add("is-busy");
+  button.disabled = true;
+  try {
+    const r = await api.request("POST", `/api/admin/submissions/${id}/rejudge`, {});
+    location.href = `/submissions/${id}?since=${r.seq}`;
+  } catch (error) {
+    toast({ title: "Not rejudged", message: describeError(error), kind: "error" });
+    button.classList.remove("is-busy");
+    button.disabled = false;
+  }
+});
 
 function listen() {
   openStream({ submission: id, since }, {

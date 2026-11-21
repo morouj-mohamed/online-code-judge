@@ -152,6 +152,16 @@ CREATE TABLE IF NOT EXISTS contest_locks (
 );
 CREATE INDEX IF NOT EXISTS idx_contest_locks ON contest_locks(contest_id, user_id);
 
+-- Messages the teacher posts during a contest ("Problem B: n <= 10^5").
+CREATE TABLE IF NOT EXISTS contest_announcements (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    contest_id   INTEGER NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+    body         TEXT    NOT NULL,
+    created_at   REAL    NOT NULL,
+    created_by   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_announcements ON contest_announcements(contest_id, id);
+
 -- Stickers / short videos an admin uploaded for a verdict (files on disk).
 CREATE TABLE IF NOT EXISTS reactions (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,6 +220,10 @@ class Database:
             self._conn.execute("ALTER TABLE submissions ADD COLUMN user_id INTEGER REFERENCES users(id)")
         if "contest_id" not in columns:
             self._conn.execute("ALTER TABLE submissions ADD COLUMN contest_id INTEGER REFERENCES contests(id)")
+        if "rejudged" not in columns:
+            # How many times an admin re-ran this submission, and its verdict before the last re-run.
+            self._conn.execute("ALTER TABLE submissions ADD COLUMN rejudged INTEGER NOT NULL DEFAULT 0")
+            self._conn.execute("ALTER TABLE submissions ADD COLUMN previous_status TEXT")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_submissions_contest ON submissions(contest_id, id)")
         contest_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(contests)")}
@@ -413,6 +427,38 @@ class Database:
             params.append(contest_id)
         return self._all(sql + " ORDER BY s.id", params)
 
+    def finished_ids_of_problem(self, problem_slug, contest_id=None):
+        """Ids of every finished submission of a problem (anonymous ones included), oldest first."""
+        sql = "SELECT id FROM submissions WHERE problem_slug = ? AND status NOT IN (?, ?)"
+        params = [problem_slug, config.PENDING, config.RUNNING]
+        if contest_id is not None:
+            sql += " AND contest_id = ?"
+            params.append(contest_id)
+        return [r["id"] for r in self._all(sql + " ORDER BY id", params)]
+
+    def reset_for_rejudge(self, ids):
+        """
+        Put finished submissions back to Pending so they are judged again, and
+        return the ids that were reset (a submission that is still Pending or
+        Running is skipped: it is about to get a fresh verdict anyway). Old test
+        results and events are deleted; the old verdict is kept in
+        previous_status so the page can say "was Wrong Answer".
+        """
+        reset = []
+        with self._tx() as c:
+            for sid in ids:
+                row = c.execute("SELECT status FROM submissions WHERE id = ?", (sid,)).fetchone()
+                if row is None or row["status"] in (config.PENDING, config.RUNNING):
+                    continue
+                c.execute("DELETE FROM test_results WHERE submission_id = ?", (sid,))
+                c.execute("DELETE FROM events WHERE submission_id = ?", (sid,))
+                c.execute("UPDATE submissions SET previous_status = status, status = ?, failed_test = NULL, "
+                          "message = '', tests_run = 0, time_ms = NULL, memory_kb = NULL, worker_id = NULL, "
+                          "started_at = NULL, finished_at = NULL, rejudged = rejudged + 1 WHERE id = ?",
+                          (config.PENDING, sid))
+                reset.append(sid)
+        return reset
+
     # ------------------------------------------------------------------ contests
     def create_contest(self, slug, title, description, starts_at, ends_at):
         with self._tx() as c:
@@ -517,6 +563,21 @@ class Database:
     def contests_with_problem(self, problem_slug):
         return self._all("SELECT c.* FROM contests c JOIN contest_problems p ON p.contest_id = c.id "
                          "WHERE p.problem_slug = ?", (problem_slug,))
+
+    def add_announcement(self, contest_id, body, created_by):
+        with self._tx() as c:
+            cur = c.execute("INSERT INTO contest_announcements (contest_id, body, created_at, created_by) "
+                            "VALUES (?, ?, ?, ?)", (contest_id, body, time.time(), created_by))
+            return cur.lastrowid
+
+    def list_announcements(self, contest_id, after=0):
+        return self._all("SELECT id, body, created_at, created_by FROM contest_announcements "
+                         "WHERE contest_id = ? AND id > ? ORDER BY id", (contest_id, after))
+
+    def delete_announcement(self, contest_id, announcement_id):
+        with self._tx() as c:
+            return c.execute("DELETE FROM contest_announcements WHERE contest_id = ? AND id = ?",
+                             (contest_id, announcement_id)).rowcount
 
     def contest_submissions(self, contest_id):
         """Submissions of a contest by non-admin accounts, oldest first (for the standings)."""

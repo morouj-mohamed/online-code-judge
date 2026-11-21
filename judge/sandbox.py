@@ -42,7 +42,7 @@ import warnings
 from dataclasses import dataclass
 
 import config
-from judge.compare import compare_outputs
+from judge.compare import compare_outputs, difference_message, normalize_checker
 
 # Python 3.12+ warns every time os.fork() is called while other threads exist,
 # because a child forked from a multi-threaded process may inherit a lock that
@@ -1156,8 +1156,11 @@ class Sandbox:
                         limits={}, wall_limit_s=5.0, cwd=self.io_dir, env={"PATH": "/usr/bin:/bin"})
         return result["maxrss_kb"]
 
-    def run_test(self, index, input_path, expected_path):
-        """Run the program on one test and return a result dict (see below)."""
+    def run_test(self, index, input_path, expected_path, checker=None):
+        """
+        Run the program on one test and return a result dict (see below).
+        checker: how outputs are compared ("exact", "tokens" or "float", see compare.py).
+        """
         self._reset_work_dir()
         floor_kb = self._maxrss_floor_kb()
         stdout_path = os.path.join(self.io_dir, "stdout.txt")
@@ -1191,13 +1194,12 @@ class Sandbox:
         mem_kb, mem_source = _measured_memory(result, floor_kb)
         verdict, message = classify_run(result, self.eff, as_limit_kb, mem_kb, stderr_head)
         if verdict is None:
-            comparison = compare_outputs(expected_path, stdout_path)
+            comparison = compare_outputs(expected_path, stdout_path, checker)
             if comparison["equal"]:
                 verdict, message = config.ACCEPTED, "output matches"
             else:
                 verdict = config.WRONG_ANSWER
-                message = (f"line {comparison['line']}: expected {comparison['expected']!r}, "
-                           f"got {comparison['actual']!r}")
+                message = difference_message(comparison)
 
         return {
             "test": index,
@@ -1245,6 +1247,7 @@ def load_problem(slug_or_path):
         "title": meta.get("title", os.path.basename(path)),
         "time_limit_ms": int(meta.get("time_limit_ms", config.DEFAULT_TIME_LIMIT_MS)),
         "memory_limit_mb": int(meta.get("memory_limit_mb", config.DEFAULT_MEMORY_LIMIT_MB)),
+        "checker": normalize_checker(meta.get("checker")),
         "tests": tests,
     }
 
@@ -1289,7 +1292,8 @@ def judge_submission(problem, language, source_text, on_event=None, on_test=None
             result["message"] = "all tests passed"
             for test in problem["tests"]:
                 events.emit("test_start", test=test["index"])
-                outcome = sandbox.run_test(test["index"], test["input"], test["expected"])
+                outcome = sandbox.run_test(test["index"], test["input"], test["expected"],
+                                           problem.get("checker"))
                 events.emit("test_result", test=test["index"], verdict=outcome["verdict"],
                             time_ms=outcome["time_ms"], memory_kb=outcome["memory_kb"])
                 result["tests"].append(outcome)

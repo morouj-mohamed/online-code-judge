@@ -249,12 +249,12 @@ def main():
     check("GET /api lists the endpoints", status == 200 and "endpoints" in payload)
     status, payload, headers = alice.request("GET", "/api/problems")
     slugs = [p["slug"] for p in payload["problems"]] if status == 200 else []
-    check("GET /api/problems -> 200 with 5 problems", status == 200 and len(slugs) == 5, ", ".join(slugs))
+    check("GET /api/problems -> 200 with 6 problems", status == 200 and len(slugs) == 6, ", ".join(slugs))
     check("the anonymous session cookie is set",
           any(c.name == "ocj_session" for c in alice.jar), "ocj_session")
     check("problem list has no test data",
           all(set(p) <= {"slug", "index", "title", "difficulty", "tags", "time_limit_ms", "memory_limit_mb", "tests_count",
-                         "limits_by_language"} for p in payload["problems"]))
+                         "limits_by_language", "checker", "checker_note"} for p in payload["problems"]))
     status, detail, _ = alice.request("GET", "/api/problems/sum-two")
     check("GET /api/problems/sum-two -> statement + sample",
           status == 200 and detail["sample_input"] and detail["sample_output"] and detail["statement"])

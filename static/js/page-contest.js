@@ -7,6 +7,7 @@ import { escapeHtml, formatCountdown, formatDateTime, startCountdown } from "./f
 import { icon } from "./icons.js";
 import { renderMarkdown } from "./markdown.js";
 import { toast } from "./toast.js";
+import { renderAnnouncementList, watchAnnouncements } from "./announcements.js";
 
 boot();
 
@@ -141,3 +142,46 @@ async function load() {
 }
 
 load();
+
+// ------------------------------------------------------------- announcements
+const annBox = document.querySelector(".js-ann");
+const annList = document.querySelector(".js-ann-list");
+const annWatch = watchAnnouncements(slug, {
+  onList(items) {
+    annList.innerHTML = renderAnnouncementList(items, { admin: isAdmin }) ||
+      (isAdmin ? '<li class="subtle">No announcements yet.</li>' : "");
+    annBox.hidden = !isAdmin && !items.length;
+  },
+  toastNew: !isAdmin,
+});
+document.querySelector(".js-ann-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const body = form.elements.namedItem("body").value.trim();
+  if (!body) return;
+  button.classList.add("is-busy");
+  button.disabled = true;
+  try {
+    const r = await api.request("POST", `/api/admin/contests/${encodeURIComponent(slug)}/announcements`, { body });
+    form.reset();
+    annWatch.replace(r.announcements);
+    toast({ title: "Announcement posted", message: "Students see it within 15 seconds.", kind: "success" });
+  } catch (error) {
+    toast({ title: "Not posted", message: describeError(error), kind: "error" });
+  } finally {
+    button.classList.remove("is-busy");
+    button.disabled = false;
+  }
+});
+annList.addEventListener("click", async (event) => {
+  const del = event.target.closest(".js-ann-delete");
+  if (!del || !window.confirm("Delete this announcement?")) return;
+  try {
+    const r = await api.request("DELETE", `/api/admin/contests/${encodeURIComponent(slug)}/announcements/${del.dataset.id}`);
+    annWatch.replace(r.announcements);
+  } catch (error) {
+    toast({ title: "Not deleted", message: describeError(error), kind: "error" });
+  }
+});
+

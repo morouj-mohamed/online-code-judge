@@ -20,7 +20,7 @@ docker compose exec judge python3 tools/manage_users.py create-admin teacher
 
 ## 0) الاختبارات الأوتوماتيك (في CMD تاني)
 - [ ] **0.1** `docker compose exec judge python3 tools/api_smoke_test.py` → آخر سطر `103/103 checks passed`
-- [ ] **0.2** `docker compose exec judge python3 tools/run_verdict_tests.py` → `14/14 passed (isolation: full)`
+- [ ] **0.2** `docker compose exec judge python3 tools/run_verdict_tests.py --reference` → `26/26 passed (isolation: full)`
 - [ ] **0.3** `docker compose exec judge python3 tools/test_concurrency.py` → `40/40 checks passed`
 - [ ] **0.4** `docker compose exec judge python3 tools/stress.py --plain` → كل الـ 20 submission أخدوا الـ verdict المتوقع
 
@@ -64,6 +64,8 @@ docker compose exec judge python3 tools/manage_users.py create-admin teacher
 - [ ] **3.4** Log out → الـ submissions بتاعة الحساب مش ظاهرة · Log in تاني → ترجع
 - [ ] **3.5** Log in بباسورد غلط → "wrong username or password" · 10 محاولات غلط ورا بعض → "Too many tries… Please wait about 5 minutes"
 - [ ] **3.6** افتح نفس الحساب من متصفح تاني → نفس الـ submissions
+- [ ] **3.7** قائمة الاسم → **Change password**: باسورد حالي غلط → رسالة · الجديد مش زي التكرار → رسالة · صح → "Password changed"
+- [ ] **3.8** بعد تغيير الباسورد: المتصفح التاني اتعمله Log out، وده لسه داخل، والباسورد القديم مابقاش شغال
 
 ## 4) المدرّس — المسائل
 - [ ] **4.1** Admin → New problem → العنوان يملأ الـ slug والحرف لوحده · الـ preview بيتحدّث وانت بتكتب
@@ -74,6 +76,11 @@ docker compose exec judge python3 tools/manage_users.py create-admin teacher
 - [ ] **4.6** Publish → الطالب يشوفها ويحلّها
 - [ ] **4.7** Edit → Save · Delete (لازم تكتب الـ slug)
 - [ ] **4.8** Submissions → **All users** يعرض كل الطلبة
+- [ ] **4.9** مسألة **F. Average of Numbers**: حل Python بيطبع `1.5` و C++ بيطبع `1.500000` → الاتنين **Accepted** · طباعة `%.2f` → **Wrong Answer** · تحت الحدود مكتوب "Numbers are accepted within … 1e-06"
+- [ ] **4.10** Edit problem → **Answer checking** = "Numbers with tolerance" → يظهر اختيار الـ error (1e-6 …) → Save
+- [ ] **4.11** **Pictures in the statement**: ارفع صورة PNG → **Insert** → اكتب وصف → Save → الطالب يشوف الصورة في المسألة · ملف SVG → مرفوض
+- [ ] **4.12** **Rejudge**: ارفع tests فيها غلطة → حل صح ياخد WA → صلّح الـ tests → **Rejudge all N submissions** → يبقى Accepted وجنبه "Rejudged · was Wrong Answer"
+- [ ] **4.13** صفحة أي submission (للمدرّس) → زرار **Rejudge** → الصفحة تتحكم تاني قدامك
 
 ## 5) المدرّس — الامتحانات
 - [ ] **5.1** New contest: بداية بعد دقيقة، مسألتين، **Exam mode** + Lock after 3 → Create → Publish
@@ -88,6 +95,8 @@ docker compose exec judge python3 tools/manage_users.py create-admin teacher
 - [ ] **5.10** **Export CSV** يتفتح في Excel صح
 - [ ] **5.11** غيّر نهاية الامتحان لوقت فات → Submit مرفوض ("contest is over")
 - [ ] **5.12** في الامتحان مفيش ستيكرز (الحكم بيظهر عادي من غير reaction)
+- [ ] **5.13** المدرّس → صفحة الـ contest → **Announcements** → اكتب رسالة (عربي أو إنجليزي) → **Post to everyone**
+- [ ] **5.14** الطالب وهو جوه مسألة في الـ contest → توصله الرسالة كـ notification خلال 15 ثانية، وتفضل لحد ما يقفلها · refresh مش بيظهرها تاني
 
 ## 6) المدرّس — الطلبة
 - [ ] **6.1** Admin → **Add students** → الصق أسماء (سطر لكل اسم) أو ارفع CSV → Create → جدول فيه الباسوردات + Print / Download CSV
@@ -140,3 +149,10 @@ docker compose exec judge python3 tools/manage_users.py create-admin teacher
 - [ ] **11.2** `docker compose up` تاني → السطر `re-queued after restart` واللي كان في الطابور يكمل
 - [ ] **11.3** الحسابات والـ submissions والستيكرز المرفوعة لسه موجودة (محفوظة في Docker volume)
 - [ ] **11.4** `https://127.0.0.1:5000` و `http://127.0.0.1:5000` الاتنين شغالين على نفس البورت
+- [ ] **11.5** `docker compose ps` → الحالة **healthy** · `http://127.0.0.1:5000/api/health` → `"ok": true`
+- [ ] **11.6** `docker compose exec judge python3 tools/backup.py backup` (وهو شغال) → "Backup written … N accounts, N submissions" · `backup.py list` يعرضها
+- [ ] **11.7** `docker compose cp judge:/data/backups ./backups` → الملف على جهازك
+
+## 12) GitHub
+- [ ] **12.1** صفحة الريبو: الـ README بالصور، وعلامة **tests passing** خضرا فوق
+- [ ] **12.2** تبويب **Actions** → آخر run كله ✓ (لو فيه ✗ ابعتلي الـ log)

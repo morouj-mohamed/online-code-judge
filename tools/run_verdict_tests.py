@@ -12,7 +12,7 @@ compared with the expected one. After every run we also check the cleanup rules:
 Usage (from the project root):
     python3 tools/run_verdict_tests.py              # the verdict programs
     python3 tools/run_verdict_tests.py --reference  # also the reference solutions
-                                                    # of all 5 problems, in every language
+                                                    # of all 6 problems, in every language
 Exit status: 0 if every row passed, 1 otherwise.
 """
 
@@ -52,7 +52,7 @@ VERDICT_CASES = [
 ]
 
 EXTENSIONS = {"cpp": "cpp", "python": "py"}
-REFERENCE_PROBLEMS = ["sum-two", "max-array", "reverse-string", "prime-check", "fib-mod"]
+REFERENCE_PROBLEMS = ["sum-two", "max-array", "reverse-string", "prime-check", "fib-mod", "average"]
 
 
 def temp_dirs():
@@ -87,7 +87,7 @@ def fmt_mem(kb):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference", action="store_true",
-                        help="also judge the reference solutions of all 5 problems")
+                        help="also judge the reference solutions of all 6 problems")
     args = parser.parse_args()
 
     iso = sandbox.get_isolation()

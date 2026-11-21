@@ -1,0 +1,47 @@
+# Runs every test suite on each push, in the SAME Docker image the project uses
+# (docker-compose.yml: chroot, setuid and the dropped capabilities included).
+# The result is the green check / red cross next to each commit on GitHub.
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  judge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the judge image
+        run: docker compose build
+
+      - name: Verdicts (every kind of program + the reference solutions of all problems)
+        run: docker compose run --rm judge python3 tools/run_verdict_tests.py --reference
+
+      - name: Concurrency (worker pool, bounded queue, no zombies)
+        run: docker compose run --rm judge python3 tools/test_concurrency.py
+
+      - name: Start the web server and wait until it reports healthy
+        run: docker compose up -d --wait --wait-timeout 120
+
+      - name: API smoke test (accounts, admin, contests, hidden-test privacy, SSE)
+        run: docker compose exec -T judge python3 tools/api_smoke_test.py
+
+      - name: Stress test (20 mixed submissions at once)
+        run: docker compose exec -T judge python3 tools/stress.py --plain
+
+      - name: Backup and restore tool
+        run: |
+          docker compose exec -T judge python3 tools/backup.py backup
+          docker compose exec -T judge python3 tools/backup.py list
+
+      - name: Server log
+        if: always()
+        run: docker compose logs --tail 200
+
+      - name: Clean up
+        if: always()
+        run: docker compose down -v

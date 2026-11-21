@@ -64,6 +64,7 @@
           <ul class="menu" id="user-menu-list" role="menu" hidden>
             <li role="none" class="menu-head">Signed in as <strong>{{ viewer.user.username }}</strong></li>
             <li role="none"><a role="menuitem" href="/submissions"><span data-icon="list"></span>My submissions</a></li>
+            <li role="none"><a role="menuitem" href="/account"><span data-icon="lock"></span>Change password</a></li>
             {% if viewer.is_admin %}<li role="none"><a role="menuitem" href="/admin"><span data-icon="server"></span>Admin: problems</a></li>{% endif %}
             <li role="none"><button role="menuitem" type="button" class="js-logout"><span data-icon="arrow-left"></span>Log out</button></li>
           </ul>

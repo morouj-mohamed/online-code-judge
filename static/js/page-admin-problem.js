@@ -49,7 +49,8 @@ function showError(message) {
 
 const updatePreview = debounce(() => {
   document.querySelector(".js-preview").innerHTML =
-    renderMarkdown(field("statement").value || "*Nothing yet*", { skipTitle: true }) ||
+    renderMarkdown(field("statement").value || "*Nothing yet*", { skipTitle: true,
+      assetBase: slug ? `/problems/${encodeURIComponent(slug)}/assets` : null }) ||
     '<p class="subtle">The statement preview appears here.</p>';
 }, 120);
 
@@ -66,11 +67,19 @@ function formData() {
     tags: field("tags").value.split(",").map((t) => t.trim()).filter(Boolean),
     time_limit_ms: Number(field("time_limit_ms").value),
     memory_limit_mb: Number(field("memory_limit_mb").value),
+    checker: field("checker").value === "float"
+      ? { type: "float", abs: Number(field("eps").value), rel: Number(field("eps").value) }
+      : { type: field("checker").value },
     statement: field("statement").value,
     sample_input: field("sample_input").value,
     sample_output: field("sample_output").value,
   };
 }
+
+function showEps() {
+  document.querySelector(".js-eps-field").hidden = field("checker").value !== "float";
+}
+field("checker").addEventListener("change", showEps);
 
 function fill(p) {
   field("slug").value = p.slug;
@@ -80,6 +89,14 @@ function fill(p) {
   field("tags").value = p.tags.join(", ");
   field("time_limit_ms").value = p.time_limit_ms;
   field("memory_limit_mb").value = p.memory_limit_mb;
+  const checker = p.checker || { type: "exact" };
+  field("checker").value = checker.type;
+  if (checker.type === "float") {
+    const eps = String(checker.abs);
+    if (![...field("eps").options].some((o) => Number(o.value) === checker.abs)) field("eps").add(new Option(eps, eps));
+    field("eps").value = [...field("eps").options].find((o) => Number(o.value) === checker.abs).value;
+  }
+  showEps();
   field("statement").value = p.statement;
   field("sample_input").value = p.sample_input;
   field("sample_output").value = p.sample_output;
@@ -88,8 +105,24 @@ function fill(p) {
 }
 
 // ------------------------------------------------------------- status area
+function renderImages() {
+  const list = problem.assets || [];
+  document.querySelector(".js-images-count").textContent = `${list.length} picture${list.length === 1 ? "" : "s"}`;
+  document.querySelector(".js-images").innerHTML = list.map((a) => `<li class="image-item">
+      <img src="/problems/${encodeURIComponent(slug)}/assets/${encodeURIComponent(a.name)}?v=${a.size}" alt="" loading="lazy">
+      <span class="mono">${escapeHtml(a.name)}</span><span class="subtle">${formatKb(Math.ceil(a.size / 1024))}</span>
+      <span class="spacer"></span>
+      <button class="btn btn-sm js-image-insert" type="button" data-name="${escapeHtml(a.name)}">${icon("plus", { size: 14 })}Insert</button>
+      <button class="btn btn-ghost btn-sm btn-icon js-image-delete" type="button" data-name="${escapeHtml(a.name)}" aria-label="Delete ${escapeHtml(a.name)}">${icon("trash", { size: 14 })}</button>
+    </li>`).join("");
+}
+
 function renderStatus() {
   if (!problem) return;
+  renderImages();
+  const box = document.querySelector(".js-rejudge-box");
+  box.hidden = !problem.submissions_count || !problem.tests.count;
+  document.querySelector(".js-rejudge-count").textContent = String(problem.submissions_count || 0);
   document.querySelector(".js-heading").textContent = `${problem.index}. ${problem.title}`;
   document.querySelector(".js-badges").innerHTML = `${stateBadge(problem.hidden)} ${validationBadge(problem.validation)}
     <span class="chip">${icon("list-checks", { size: 13 })}<span class="num">${problem.tests.count}</span> tests · ${formatKb(Math.ceil(problem.tests.total_bytes / 1024))}</span>`;
@@ -138,7 +171,7 @@ form.addEventListener("submit", async (event) => {
       root.dataset.slug = slug;
       field("slug").readOnly = true;
       saveButton.querySelector(".btn-label-idle").textContent = "Save changes";
-      document.querySelectorAll(".js-tests-card, .js-validate-card, .js-danger").forEach((el) => { el.hidden = false; });
+      document.querySelectorAll(".js-tests-card, .js-images-card, .js-validate-card, .js-danger").forEach((el) => { el.hidden = false; });
       toast({ title: "Problem created", message: "It stays hidden until you publish it. Next: upload the tests.", kind: "success" });
       initValidateEditor();
     }
@@ -303,3 +336,77 @@ async function start() {
 }
 
 start();
+
+// ------------------------------------------------------------- rejudge
+document.querySelector(".js-rejudge-all").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const n = problem?.submissions_count || 0;
+  if (!window.confirm(`Judge all ${n} submissions of this problem again? Their verdicts can change.`)) return;
+  button.classList.add("is-busy");
+  button.disabled = true;
+  try {
+    const r = await api.request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/rejudge`, {});
+    toast({ title: `${r.queued} submissions queued again`, message: "Watch them on Submissions → All users or in the OS Inspector.", kind: "success" });
+    announce(`${r.queued} submissions queued for rejudging`);
+  } catch (error) {
+    toast({ title: "Rejudge refused", message: describeError(error), kind: "error" });
+  } finally {
+    button.classList.remove("is-busy");
+    button.disabled = false;
+  }
+});
+
+// ------------------------------------------------------------- statement pictures
+document.querySelector(".js-image-upload").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const file = document.getElementById("f-image").files[0];
+  if (!file) {
+    toast({ title: "Choose a picture first", kind: "warning" });
+    return;
+  }
+  const body = new FormData();
+  body.append("file", file);
+  button.classList.add("is-busy");
+  button.disabled = true;
+  try {
+    const r = await api.request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/assets`, body);
+    problem.assets = r.assets;
+    renderImages();
+    document.getElementById("f-image").value = "";
+    toast({ title: "Picture uploaded", message: `Press Insert to put ${r.name} in the statement.`, kind: "success" });
+  } catch (error) {
+    toast({ title: "Upload refused", message: describeError(error), kind: "error" });
+  } finally {
+    button.classList.remove("is-busy");
+    button.disabled = false;
+  }
+});
+
+document.querySelector(".js-images").addEventListener("click", async (event) => {
+  const insert = event.target.closest(".js-image-insert");
+  if (insert) {
+    const area = field("statement");
+    const line = `![Describe the picture](${insert.dataset.name})`;
+    const at = area.selectionEnd ?? area.value.length;
+    const before = area.value.slice(0, at), after = area.value.slice(at);
+    area.value = `${before}${before && !before.endsWith("\n") ? "\n" : ""}\n${line}\n\n${after.replace(/^\n+/, "")}`;
+    area.focus();
+    const start = area.value.indexOf(line) + 2;
+    area.setSelectionRange(start, start + "Describe the picture".length);   // ready to type the description
+    updatePreview();
+    announce("Picture inserted. Type its description, then save.");
+    return;
+  }
+  const del = event.target.closest(".js-image-delete");
+  if (del) {
+    if (!window.confirm(`Delete ${del.dataset.name}? A statement that still shows it will show a broken picture.`)) return;
+    try {
+      const r = await api.request("DELETE", `/api/admin/problems/${encodeURIComponent(slug)}/assets/${encodeURIComponent(del.dataset.name)}`);
+      problem.assets = r.assets;
+      renderImages();
+    } catch (error) {
+      toast({ title: "Not deleted", message: describeError(error), kind: "error" });
+    }
+  }
+});
+

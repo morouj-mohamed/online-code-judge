@@ -1,8 +1,11 @@
 // markdown.js - a deliberately small Markdown renderer for problem statements.
 //
 // It supports exactly what the statements use: headings, paragraphs, bullet
-// and numbered lists, fenced code blocks, `inline code` and **bold**. All text
-// is HTML-escaped FIRST, so a statement can never inject HTML or scripts.
+// and numbered lists, fenced code blocks, `inline code`, **bold** and pictures
+// on a line of their own:   ![The graph of sample 1](graph.png)
+// All text is HTML-escaped FIRST, so a statement can never inject HTML or
+// scripts. A picture may only name a file uploaded to this problem (no links
+// to other sites), so a statement cannot load anything from outside.
 
 import { escapeHtml } from "./format.js";
 
@@ -12,12 +15,15 @@ function inline(text) {
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
+const IMAGE_LINE = /^!\[([^\]]*)\]\(([a-z0-9][a-z0-9._-]{0,59}\.(?:png|jpg|gif|webp))\)$/;
+
 /**
- * render(markdown, {skipTitle, skipSections}) -> HTML string
+ * render(markdown, {skipTitle, skipSections, assetBase}) -> HTML string
  *   skipTitle     drop the first "# ..." heading (the page shows its own title)
  *   skipSections  "## Name" sections to leave out (shown as real UI instead)
+ *   assetBase     where the problem's pictures are served, e.g. "/problems/sum-two/assets"
  */
-export function renderMarkdown(source, { skipTitle = true, skipSections = [] } = {}) {
+export function renderMarkdown(source, { skipTitle = true, skipSections = [], assetBase = null } = {}) {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   const skip = new Set(skipSections.map((s) => s.toLowerCase()));
   const out = [];
@@ -58,6 +64,15 @@ export function renderMarkdown(source, { skipTitle = true, skipSections = [] } =
       const code = [];
       while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
       out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const image = assetBase && IMAGE_LINE.exec(line.trim());
+    if (image) {
+      flushParagraph();
+      flushList();
+      const alt = escapeHtml(image[1].trim());
+      out.push(`<figure class="statement-figure"><img src="${escapeHtml(`${assetBase}/${image[2]}`)}" alt="${alt}" loading="lazy">` +
+        `${alt ? `<figcaption>${alt}</figcaption>` : ""}</figure>`);
       continue;
     }
     const bullet = /^\s*[-*]\s+(.*)$/.exec(line);

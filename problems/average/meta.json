@@ -1,0 +1,17 @@
+{
+  "slug": "average",
+  "index": "F",
+  "title": "Average of Numbers",
+  "difficulty": "Easy",
+  "tags": [
+    "math",
+    "floating-point"
+  ],
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256,
+  "checker": {
+    "type": "float",
+    "abs": 1e-06,
+    "rel": 1e-06
+  }
+}

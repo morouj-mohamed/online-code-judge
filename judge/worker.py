@@ -104,6 +104,30 @@ class WorkerPool:
             raise
         return sid
 
+    def rejudge(self, ids):
+        """
+        Judge finished submissions again (an admin fixed the tests, for example).
+        The rows are reset in ONE transaction, then a helper thread puts them in
+        the bounded queue: put() blocks while the queue is full, so rejudging
+        500 submissions never overflows it, and the web request returns at once.
+        Returns the ids that will be re-run.
+        """
+        if self._closing:
+            raise PoolClosed("the pool is shutting down")
+        ids = self.db.reset_for_rejudge(ids)
+        for sid in ids:
+            self._publish_status(sid, config.PENDING, rejudge=True)
+
+        def feed():
+            for sid in ids:
+                try:
+                    self._enqueue(sid, block=True, timeout=None)
+                except PoolClosed:
+                    return       # still Pending in the database: re-queued at the next start
+        if ids:
+            threading.Thread(target=feed, name="rejudge-feeder", daemon=True).start()
+        return ids
+
     def enqueue_existing(self, sid, block=True, timeout=None):
         """Queue a submission that already exists in the database (recovery, tests)."""
         self._enqueue(sid, block, timeout)
@@ -224,6 +248,10 @@ class WorkerPool:
     def _publish_queue(self):
         # items (FIFO order), length, capacity, produced, consumed: one consistent snapshot.
         self.broker.publish("queue", self.queue.snapshot())
+
+    def threads_alive(self):
+        """How many worker threads are still running (a thread that died is a broken judge)."""
+        return sum(1 for t in self._threads if t.is_alive())
 
     def snapshot(self):
         """A consistent picture of the pool, safe to call from any thread."""

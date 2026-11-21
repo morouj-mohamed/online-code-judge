@@ -13,7 +13,9 @@ import tempfile
 # Paths
 # ----------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROBLEMS_DIR = os.path.join(BASE_DIR, "problems")
+# Statements, hidden tests and pictures. On a server, point this at a folder
+# that is backed up (tools/backup.py copies it) with JUDGE_PROBLEMS_DIR.
+PROBLEMS_DIR = os.environ.get("JUDGE_PROBLEMS_DIR", os.path.join(BASE_DIR, "problems"))
 
 # Every submission gets its own private temp directory under this folder.
 TMP_ROOT = os.environ.get("JUDGE_TMP_ROOT", tempfile.gettempdir())

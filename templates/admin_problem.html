@@ -44,6 +44,23 @@
           <label for="f-memory">Memory limit (MB, C/C++)</label>
           <input class="input mono" id="f-memory" name="memory_limit_mb" type="number" min="16" max="1024" step="16" value="256">
         </div>
+        <div class="field">
+          <label for="f-checker">Answer checking</label>
+          <select class="select" id="f-checker" name="checker" aria-describedby="checker-hint">
+            <option value="exact">Exact (lines must match)</option>
+            <option value="tokens">Words (spaces and line breaks do not matter)</option>
+            <option value="float">Numbers with tolerance (real-number answers)</option>
+          </select>
+        </div>
+        <div class="field js-eps-field" hidden>
+          <label for="f-eps">Allowed error (absolute or relative)</label>
+          <select class="select mono" id="f-eps" name="eps">
+            <option value="0.01">1e-2</option><option value="0.001">1e-3</option><option value="0.0001">1e-4</option>
+            <option value="0.00001">1e-5</option><option value="0.000001" selected>1e-6</option><option value="1e-9">1e-9</option>
+          </select>
+        </div>
+        <p class="hint field-wide" id="checker-hint">Exact is right for most problems. Use "Numbers with tolerance" when the
+          answer is a real number (e.g. 0.333333 and 0.3333333 are both correct within 1e-6).</p>
         <div class="field field-wide">
           <label for="f-tags">Tags</label>
           <input class="input" id="f-tags" name="tags" placeholder="math, implementation" aria-describedby="tags-hint">
@@ -87,6 +104,21 @@
     </div>
   </form>
 
+  <section class="card card-pad stack js-images-card" aria-labelledby="images-title" {% if not slug %}hidden{% endif %}>
+    <div class="section-title"><h2 id="images-title" class="card-title">Pictures in the statement</h2><span class="spacer"></span>
+      <span class="chip js-images-count"></span></div>
+    <p class="muted">Upload a PNG, JPEG, GIF or WebP (max 2 MB), then press <strong>Insert</strong>: a line like
+      <span class="mono">![Describe the picture](graph.png)</span> is added to the statement. Write a real description:
+      it is what screen readers say. Hidden problems keep their pictures hidden too.</p>
+    <ul class="image-list js-images" aria-label="Uploaded pictures"></ul>
+    <div class="row-wrap">
+      <label class="sr-only" for="f-image">Picture to upload</label>
+      <input class="input" id="f-image" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+      <button class="btn js-image-upload" type="button"><span data-icon="cloud" data-size="14"></span>
+        <span class="btn-label-idle">Upload picture</span><span class="btn-label-busy">Uploading…</span></button>
+    </div>
+  </section>
+
   <section class="card card-pad stack js-tests-card" aria-labelledby="tests-title" {% if not slug %}hidden{% endif %}>
     <div class="section-title"><h2 id="tests-title" class="card-title">Hidden tests</h2><span class="spacer"></span>
       <span class="chip js-tests-count"></span></div>
@@ -101,6 +133,14 @@
       <button class="btn js-upload" type="button" disabled>
         <span data-icon="cloud" data-size="14"></span><span class="btn-label-idle">Upload tests</span><span class="btn-label-busy">Uploading…</span>
       </button>
+    </div>
+    <div class="rejudge-box js-rejudge-box" hidden>
+      <p class="muted"><strong>Changed the tests, the limits or the answer checking?</strong> Judge every earlier submission of
+        this problem again with the current settings. Contest standings update by themselves.</p>
+      <div class="row-wrap"><span class="spacer"></span>
+        <button class="btn js-rejudge-all" type="button"><span data-icon="refresh" data-size="14"></span>
+          <span class="btn-label-idle">Rejudge all <span class="js-rejudge-count">0</span> submissions</span><span class="btn-label-busy">Queuing…</span></button>
+      </div>
     </div>
   </section>
 

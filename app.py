@@ -70,6 +70,7 @@ from werkzeug.serving import WSGIRequestHandler, make_server
 
 import config
 from judge import auth
+from judge import compare
 from judge import concepts as conceptmod
 from judge import contests as contestmod
 from judge import db as dbmod
@@ -146,7 +147,7 @@ def public_message(status, message, failed_test=None):
     where = f"test {failed_test}" if failed_test is not None else "a test"
     body = re.sub(r"^test \d+: ", "", message)
     if status == config.WRONG_ANSWER:
-        line = re.match(r"line (\d+):", body)
+        line = re.match(r"line (\d+)[:,]", body)
         detail = f" (first difference on line {line.group(1)})" if line else ""
         return f"{where}: output differs from the expected answer{detail}"
     if status in (config.TIME_LIMIT_EXCEEDED, config.MEMORY_LIMIT_EXCEEDED):
@@ -183,6 +184,8 @@ def public_submission(row, detail=False):
         "time_ms": row["time_ms"], "memory_kb": row["memory_kb"], "worker_id": row["worker_id"],
         "created_at": row["created_at"], "started_at": row["started_at"],
         "finished_at": row["finished_at"],
+        "rejudged": row["rejudged"] if "rejudged" in row.keys() else 0,
+        "previous_status": row["previous_status"] if "previous_status" in row.keys() else None,
     }
     if detail:
         data["source"] = row["source"]
@@ -271,7 +274,8 @@ def load_public_problem(slug, detail=False, include_hidden=False):
             "tags": [t for t in tags if isinstance(t, str)] if isinstance(tags, list) else [],
             "time_limit_ms": problem["time_limit_ms"],
             "memory_limit_mb": problem["memory_limit_mb"], "tests_count": len(problem["tests"]),
-            "limits_by_language": limits}
+            "limits_by_language": limits, "checker": problem["checker"],
+            "checker_note": compare.describe_checker(problem["checker"])}
     if include_hidden:
         data["hidden"] = bool(meta.get("hidden", False))
     if detail:
@@ -430,6 +434,13 @@ class JudgeService:
         with self._lock:
             self._owners[sid] = (viewer.session_id, viewer.user_id)
         return sid, seq
+
+    def rejudge(self, ids):
+        seq = self.broker.stats()["published"]
+        try:
+            return self.pool.rejudge(ids), seq
+        except wmod.PoolClosed:
+            raise ApiError(503, "shutting_down", "the judge is shutting down") from None
 
     def _take_slot(self):
         try:
@@ -663,6 +674,8 @@ def create_app(service=None):
         # Test ZIPs are bigger than any other request: raise the limit for that one URL.
         if request.path.startswith("/api/admin/") and request.path.endswith("/tests"):
             request.max_content_length = problemstore.MAX_ZIP_BYTES + 1024 * 1024
+        elif request.path.startswith("/api/admin/problems/") and request.path.endswith("/assets"):
+            request.max_content_length = problemstore.ASSET_MAX_BYTES + 64 * 1024
         elif request.path == "/api/admin/reactions" and request.method == "POST":
             request.max_content_length = reactmod.MAX_BYTES + 64 * 1024
 
@@ -891,6 +904,12 @@ def create_app(service=None):
             abort(404)
         return render_template("admin_user.html", page="admin", username=username)
 
+    @app.get("/account")
+    def page_account():
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        return render_template("account.html", page="account")
+
     @app.get("/admin/reactions")
     def page_admin_reactions():
         if not g.viewer.user:
@@ -976,6 +995,28 @@ def create_app(service=None):
         if request.args.get("contest"):
             opened = contest_opens_problem(visible_contest(request.args["contest"]), slug)
         return jsonify(load_public_problem(slug, detail=True, include_hidden=g.viewer.is_admin or opened))
+
+    @app.get("/api/health")
+    def health():
+        """
+        For Docker / a load balancer: 200 when the judge can serve and judge,
+        503 otherwise. It checks the things that really break: the database
+        answers, every worker thread is alive, and the pool is not shutting down.
+        """
+        snap = service.pool.snapshot()
+        alive = service.pool.threads_alive()
+        try:
+            service.db.count_by_status()
+            db_ok = True
+        except Exception:                 # noqa: BLE001 - any database failure means "unhealthy"
+            db_ok = False
+        ok = db_ok and not snap["closing"] and alive == len(snap["workers"]) > 0
+        body = {"ok": ok, "database": db_ok, "workers": len(snap["workers"]), "workers_alive": alive,
+                "busy": sum(1 for w in snap["workers"] if w["state"] == "busy"),
+                "queue": snap["queue"]["length"], "isolation": sandbox.get_isolation().level}
+        response = jsonify(body)
+        response.status_code = 200 if ok else 503
+        return response
 
     @app.post("/api/submit")
     def submit():
@@ -1251,6 +1292,50 @@ def create_app(service=None):
                                      for i, p in enumerate(table["problems"])],
                         "rows": table["rows"], "first_solves": table["first_solves"],
                         "me": g.viewer.user["username"] if g.viewer.user else None})
+
+    # ------------------------------------------------------------ announcements
+    ANNOUNCEMENT_MAX = 500
+
+    def announcement_payload(row, admin):
+        data = {"id": row["id"], "body": row["body"], "created_at": row["created_at"]}
+        if admin:
+            data["created_by"] = row["created_by"]
+        return data
+
+    @app.get("/api/contests/<slug>/announcements")
+    def contest_announcements(slug):
+        """Polled every few seconds by open contest and problem pages (cheap: "after" = last id seen)."""
+        contest = visible_contest(slug)
+        try:
+            after = max(0, int(request.args.get("after", 0)))
+        except ValueError:
+            after = 0
+        rows = service.db.list_announcements(contest["id"], after)
+        return jsonify({"announcements": [announcement_payload(r, g.viewer.is_admin) for r in rows],
+                        "server_time": time.time()})
+
+    @app.post("/api/admin/contests/<slug>/announcements")
+    def admin_add_announcement(slug):
+        require_admin()
+        contest = admin_contest(slug)
+        body = read_json().get("body")
+        if not isinstance(body, str) or not body.strip():
+            raise ApiError(400, "missing_fields", "write the announcement")
+        body = body.strip()
+        if len(body) > ANNOUNCEMENT_MAX:
+            raise ApiError(400, "too_long", f"an announcement is at most {ANNOUNCEMENT_MAX} characters")
+        aid = service.db.add_announcement(contest["id"], body, g.viewer.user["username"])
+        return jsonify({"id": aid, "announcements": [announcement_payload(r, True)
+                                                     for r in service.db.list_announcements(contest["id"])]}), 201
+
+    @app.delete("/api/admin/contests/<slug>/announcements/<int:announcement_id>")
+    def admin_delete_announcement(slug, announcement_id):
+        require_admin()
+        contest = admin_contest(slug)
+        if not service.db.delete_announcement(contest["id"], announcement_id):
+            raise ApiError(404, "not_found", "no such announcement")
+        return jsonify({"announcements": [announcement_payload(r, True)
+                                          for r in service.db.list_announcements(contest["id"])]})
 
     @app.get("/api/contests/<slug>/standings.csv")
     def contest_standings_csv(slug):
@@ -1540,6 +1625,35 @@ def create_app(service=None):
         moved = log_in(user["id"])
         return jsonify({"user": public_user(user), "moved_submissions": moved})
 
+    @app.post("/api/auth/password")
+    def auth_change_password():
+        """
+        A logged-in user changes their own password. The current password is
+        required (a stolen, still-open browser alone is not enough). Every
+        other login session of the account is ended; this browser gets a new
+        session so the user stays logged in here.
+        """
+        user = g.viewer.user
+        if not user:
+            raise ApiError(401, "login_required", "log in first")
+        body = read_json()
+        rate_limit("auth")
+        current, new = body.get("current_password"), body.get("new_password")
+        if not isinstance(current, str) or not isinstance(new, str) or len(current) > 1024:
+            raise ApiError(400, "missing_fields", "current_password and new_password are required")
+        full = service.db.get_user(user["id"])
+        if not auth.verify_password(current, full["password_hash"]):
+            raise ApiError(403, "wrong_password", "your current password is not correct")
+        try:
+            auth.validate_password(new, user["username"])
+        except auth.ValidationError as exc:
+            raise ApiError(400, "invalid_password", str(exc)) from None
+        if new == current:
+            raise ApiError(400, "same_password", "choose a password different from the current one")
+        service.db.set_password(user["id"], auth.hash_password(new))     # ends every session
+        log_in(user["id"])                                               # a fresh one for this browser
+        return jsonify({"user": public_user(full), "changed": True})
+
     @app.post("/api/auth/logout")
     def auth_logout():
         token = request.cookies.get(config.AUTH_COOKIE, "")
@@ -1562,7 +1676,10 @@ def create_app(service=None):
                 "difficulty": meta.get("difficulty", "Easy"), "tags": meta.get("tags", []),
                 "time_limit_ms": meta.get("time_limit_ms", config.DEFAULT_TIME_LIMIT_MS),
                 "memory_limit_mb": meta.get("memory_limit_mb", config.DEFAULT_MEMORY_LIMIT_MB),
+                "checker": compare.normalize_checker(meta.get("checker")),
                 "hidden": bool(meta.get("hidden", False)), "validation": meta.get("validation"),
+                "submissions_count": len(service.db.finished_ids_of_problem(slug)),
+                "assets": problemstore.list_assets(slug),
                 "updated_at": meta.get("updated_at"), "statement": statement,
                 "sample_input": sample_in, "sample_output": sample_out,
                 "tests": problemstore.tests_info(slug)}
@@ -1586,6 +1703,8 @@ def create_app(service=None):
             items.append({"slug": slug, "index": meta.get("index", ""), "title": meta.get("title", slug),
                           "difficulty": meta.get("difficulty", "Easy"), "tags": meta.get("tags", []),
                           "hidden": bool(meta.get("hidden", False)), "validation": meta.get("validation"),
+                "submissions_count": len(service.db.finished_ids_of_problem(slug)),
+                "assets": problemstore.list_assets(slug),
                           "tests": problemstore.tests_info(slug), **counts.get(slug, {"submissions": 0, "accepted": 0})})
         return jsonify({"problems": items, "next_index": problemstore.next_index(),
                         "users": service.db.list_users()})
@@ -1668,6 +1787,82 @@ def create_app(service=None):
                                            "tests": result["total_tests"],
                                            "by": g.viewer.user["username"]})
         return jsonify(result)
+
+    # ------------------------------------------------------------ statement images
+    def problem_visible_to_viewer(slug):
+        """Same rule as the problem page: public, or admin, or opened by a visible contest."""
+        if not problemstore.exists(slug):
+            return False
+        if g.viewer.is_admin or not problemstore.is_hidden(slug):
+            return True
+        return any(not c["hidden"] and contest_opens_problem(c, slug)
+                   for c in service.db.contests_with_problem(slug))
+
+    @app.get("/problems/<slug>/assets/<name>")
+    def problem_asset(slug, name):
+        if not problem_visible_to_viewer(slug):
+            abort(404)
+        path = problemstore.asset_path(slug, name)
+        if path is None:
+            abort(404)
+        # no-cache = "ask the server every time": a replaced or deleted picture is
+        # seen at once, and an unchanged one costs only a tiny 304 (ETag).
+        response = send_file(path, mimetype=problemstore.asset_mime(name), conditional=True, etag=True, max_age=0)
+        response.cache_control.no_cache = True
+        response.headers["Content-Disposition"] = "inline"
+        return response
+
+    @app.post("/api/admin/problems/<slug>/assets")
+    def admin_upload_asset(slug):
+        require_admin()
+        admin_slug(slug)
+        upload = request.files.get("file")
+        if upload is None:
+            raise ApiError(400, "missing_file", "send the image as multipart form field 'file'")
+        try:
+            name = problemstore.save_asset(slug, upload.read(problemstore.ASSET_MAX_BYTES + 1), upload.filename)
+        except problemstore.ProblemStoreError as exc:
+            raise ApiError(400, "invalid_image", str(exc)) from None
+        return jsonify({"name": name, "markdown": f"![Describe the picture]({name})",
+                        "assets": problemstore.list_assets(slug)}), 201
+
+    @app.delete("/api/admin/problems/<slug>/assets/<name>")
+    def admin_delete_asset(slug, name):
+        require_admin()
+        admin_slug(slug)
+        try:
+            problemstore.delete_asset(slug, name)
+        except problemstore.ProblemStoreError as exc:
+            raise ApiError(404, "image_not_found", str(exc)) from None
+        return jsonify({"assets": problemstore.list_assets(slug)})
+
+    # ------------------------------------------------------------ rejudge
+    @app.post("/api/admin/submissions/<int:submission_id>/rejudge")
+    def admin_rejudge_submission(submission_id):
+        require_admin()
+        if service.db.get_submission(submission_id) is None:
+            raise ApiError(404, "submission_not_found", "no such submission")
+        ids, seq = service.rejudge([submission_id])
+        if not ids:
+            raise ApiError(409, "still_judging", "this submission is still being judged")
+        return jsonify({"queued": len(ids), "ids": ids, "seq": seq,
+                        "stream": f"/api/stream?submission={submission_id}&since={seq}"}), 202
+
+    @app.post("/api/admin/problems/<slug>/rejudge")
+    def admin_rejudge_problem(slug):
+        require_admin()
+        admin_slug(slug)
+        body = read_json()
+        contest_id = None
+        if body.get("contest"):
+            contest = service.db.get_contest(str(body["contest"]))
+            if contest is None:
+                raise ApiError(404, "contest_not_found", "no such contest")
+            contest_id = contest["id"]
+        if problemstore.tests_info(slug)["count"] == 0:
+            raise ApiError(400, "no_tests", "upload tests first")
+        ids, seq = service.rejudge(service.db.finished_ids_of_problem(slug, contest_id))
+        return jsonify({"queued": len(ids), "seq": seq}), 202
 
     # ------------------------------------------------------------ reactions
     def reactions_payload():
