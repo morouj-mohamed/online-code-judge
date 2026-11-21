@@ -100,3 +100,37 @@ export function debounce(fn, wait) {
     timer = setTimeout(() => fn(...args), wait);
   };
 }
+
+/**
+ * "2d 03:15:09" / "03:15:09" / "15:09": the time left until `target`.
+ * `offset` = server time - browser time, so a wrong computer clock does not matter.
+ */
+export function formatCountdown(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const two = (n) => String(n).padStart(2, "0");
+  const clock = h || days ? `${two(h)}:${two(m)}:${two(sec)}` : `${two(m)}:${two(sec)}`;
+  return days ? `${days}d ${clock}` : clock;
+}
+
+/** Calls render(secondsLeft, phase) every second until stopped. */
+export function startCountdown({ startsAt, endsAt, serverTime }, render) {
+  const offset = (serverTime ?? Date.now() / 1000) - Date.now() / 1000;
+  let lastPhase = null;
+  const tick = () => {
+    const now = Date.now() / 1000 + offset;
+    const phase = now < startsAt ? "upcoming" : now < endsAt ? "running" : "ended";
+    render(phase === "upcoming" ? startsAt - now : phase === "running" ? endsAt - now : 0, phase, lastPhase);
+    lastPhase = phase;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+  return () => clearInterval(timer);
+}
+
+export function formatDateTime(unixSeconds) {
+  return new Date(unixSeconds * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}

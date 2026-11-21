@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ contest.title }} · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="contest" data-slug="{{ contest.slug }}" data-view="{{ view }}">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/contests"><span data-icon="arrow-left" data-size="14"></span>All contests</a></nav>
+      <h1>{{ contest.title }}</h1>
+      <div class="row-wrap js-meta"></div>
+    </div>
+    <div class="contest-clock js-clock" role="timer" aria-live="off"></div>
+  </div>
+  <nav class="tabs" aria-label="Contest sections">
+    <a href="/contests/{{ contest.slug }}" {% if view == 'overview' %}aria-current="page"{% endif %}><span data-icon="file-code"></span>Problems</a>
+    <a href="/contests/{{ contest.slug }}/standings" {% if view == 'standings' %}aria-current="page"{% endif %}><span data-icon="trophy"></span>Standings</a>
+    {% if viewer and viewer.is_admin %}
+    <span class="spacer"></span>
+    <a class="btn btn-sm" href="/admin/contests/{{ contest.slug }}"><span data-icon="edit" data-size="14"></span>Edit</a>
+    <a class="btn btn-sm" href="/api/contests/{{ contest.slug }}/standings.csv" download><span data-icon="download" data-size="14"></span>Export CSV</a>
+    {% endif %}
+  </nav>
+  <div id="contest-region" aria-busy="true">
+    <div class="skeleton" style="height: 220px; border-radius: 12px"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-contest.js') }}"></script>{% endblock %}

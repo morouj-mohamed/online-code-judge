@@ -39,6 +39,8 @@ Pages (Phase 4, HTML rendered from templates/, behaviour in static/js/):
     /                       problem list        /problems/<slug>   statement + editor
     /submissions            your submissions    /submissions/<id>  live result
     /login  /signup         accounts            /admin             problem management
+    /contests  /contests/<slug>  /contests/<slug>/standings          timed contests
+    /admin/contests/<slug>  /admin/users/<name>  /admin/similarity   teacher tools
 
 Hidden tests are never sent to a client: problem endpoints only expose the
 sample, and every verdict message is rewritten by public_message() so that it
@@ -63,11 +65,13 @@ from werkzeug.exceptions import HTTPException
 
 import config
 from judge import auth
+from judge import contests as contestmod
 from judge import db as dbmod
 from judge import events as evmod
 from judge import problemstore
 from judge import queue as jqueue
 from judge import sandbox
+from judge import similarity
 from judge import worker as wmod
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -404,12 +408,13 @@ class JudgeService:
             self._owners.clear()
 
     # ------------------------------------------------------------ actions
-    def submit(self, viewer, problem, language, code):
+    def submit(self, viewer, problem, language, code, contest_id=None):
         seq = self.broker.stats()["published"]
         try:
             sid = self.pool.submit(problem, language, code, block=True,
                                    timeout=config.SUBMIT_QUEUE_WAIT_S,
-                                   session_id=viewer.session_id, user_id=viewer.user_id)
+                                   session_id=viewer.session_id, user_id=viewer.user_id,
+                                   contest_id=contest_id)
         except jqueue.Full:
             raise ApiError(503, "queue_full", "the judge queue is full, try again in a moment",
                            headers={"Retry-After": "5"}) from None
@@ -730,11 +735,45 @@ def create_app(service=None):
             raise ApiError(400, "empty_code", "the code is empty")
         if "\x00" in code:
             raise ApiError(400, "invalid_code", "the code contains a NUL byte")
+        contest_slug = body.get("contest")
+        g.contest = None
+        if contest_slug is not None:
+            g.contest = contest_for_submit(contest_slug, problem)
         try:
-            load_public_problem(problem, include_hidden=g.viewer.is_admin)
+            load_public_problem(problem, include_hidden=g.viewer.is_admin or g.contest is not None)
         except ApiError:
             raise ApiError(400, "unknown_problem", f"unknown problem: {problem!r}") from None
         return problem, language, code
+
+    # ------------------------------------------------------------ contest rules
+    def visible_contest(slug):
+        contest = service.db.get_contest(slug) if isinstance(slug, str) else None
+        if contest is None or (contest["hidden"] and not g.viewer.is_admin):
+            raise ApiError(404, "contest_not_found", f"unknown contest: {slug!r}")
+        return contest
+
+    def contest_opens_problem(contest, problem_slug):
+        """A contest shows its problems once it has started (admins: always)."""
+        if problem_slug not in service.db.contest_problems(contest["id"]):
+            return False
+        return g.viewer.is_admin or contestmod.phase(contest) != "upcoming"
+
+    def contest_for_submit(contest_slug, problem_slug):
+        contest = visible_contest(contest_slug)
+        if problem_slug not in service.db.contest_problems(contest["id"]):
+            raise ApiError(400, "not_in_contest", "this problem is not part of the contest")
+        if not g.viewer.user:
+            raise ApiError(401, "login_required", "log in to take part in a contest")
+        current = contestmod.phase(contest)
+        if current != "running":
+            raise ApiError(403, "contest_not_running",
+                           "the contest has not started yet" if current == "upcoming"
+                           else "the contest is over: submissions are closed")
+        if contest["exam_mode"] and service.db.exam_state(contest["id"], g.viewer.user_id)["locked"]:
+            # Enforced HERE, on the server: hiding the warning in the browser does not help.
+            raise ApiError(403, "exam_locked", "your exam is locked because you left the exam page too often; "
+                                               "ask the teacher to unlock it")
+        return contest
 
     def read_json():
         if not request.is_json:
@@ -782,11 +821,60 @@ def create_app(service=None):
 
     @app.get("/problems/<slug>")
     def page_problem(slug):
+        contest = None
+        contest_slug = request.args.get("contest")
+        if contest_slug:
+            try:
+                contest = visible_contest(contest_slug)
+            except ApiError:
+                abort(404)
+            if not contest_opens_problem(contest, slug):
+                abort(404)
         try:
-            problem = load_public_problem(slug, include_hidden=g.viewer.is_admin)
+            problem = load_public_problem(slug, include_hidden=g.viewer.is_admin or contest is not None)
         except ApiError:
             abort(404)
-        return render_template("problem.html", page="problem", problem=problem)
+        return render_template("problem.html", page="problem", problem=problem,
+                               contest=contest, contest_phase=contestmod.phase(contest) if contest else None)
+
+    @app.get("/contests")
+    def page_contests():
+        return render_template("contests.html", page="contests")
+
+    @app.get("/contests/<slug>")
+    @app.get("/contests/<slug>/standings")
+    def page_contest(slug):
+        try:
+            contest = visible_contest(slug)
+        except ApiError:
+            abort(404)
+        view = "standings" if request.path.endswith("/standings") else "overview"
+        return render_template("contest.html", page="contests", contest=contest, view=view)
+
+    @app.get("/admin/contests/new")
+    @app.get("/admin/contests/<slug>")
+    def page_admin_contest(slug=None):
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        if not g.viewer.is_admin or (slug and service.db.get_contest(slug) is None):
+            abort(404)
+        return render_template("admin_contest.html", page="admin", slug=slug or "")
+
+    @app.get("/admin/users/<username>")
+    def page_admin_user(username):
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        if not g.viewer.is_admin or service.db.get_user_by_name(username) is None:
+            abort(404)
+        return render_template("admin_user.html", page="admin", username=username)
+
+    @app.get("/admin/similarity")
+    def page_admin_similarity():
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        if not g.viewer.is_admin:
+            abort(404)
+        return render_template("admin_similarity.html", page="admin")
 
     @app.get("/login")
     def page_login():
@@ -844,13 +932,18 @@ def create_app(service=None):
 
     @app.get("/api/problems/<slug>")
     def problem(slug):
-        return jsonify(load_public_problem(slug, detail=True, include_hidden=g.viewer.is_admin))
+        opened = False
+        if request.args.get("contest"):
+            opened = contest_opens_problem(visible_contest(request.args["contest"]), slug)
+        return jsonify(load_public_problem(slug, detail=True, include_hidden=g.viewer.is_admin or opened))
 
     @app.post("/api/submit")
     def submit():
         problem_slug, language, code = read_code_request()
         rate_limit("submit")
-        sid, seq = service.submit(g.viewer, problem_slug, language, code)
+        contest = g.get("contest")
+        sid, seq = service.submit(g.viewer, problem_slug, language, code,
+                                  contest_id=contest["id"] if contest else None)
         return jsonify({"id": sid, "status": config.PENDING, "seq": seq,
                         "stream": f"/api/stream?submission={sid}&since={seq}"}), 202
 
@@ -890,6 +983,13 @@ def create_app(service=None):
     def submission(submission_id):
         row = own_submission(submission_id)
         data = public_submission(row, detail=True)
+        if row["contest_id"]:
+            contest = service.db.get_contest_by_id(row["contest_id"])
+            if contest:
+                data["contest"] = {"slug": contest["slug"], "title": contest["title"]}
+        if g.viewer.is_admin and row["user_id"]:
+            owner = service.db.get_user(row["user_id"])
+            data["username"] = owner["username"] if owner else None
         data["tests"] = [public_test(t) for t in service.db.get_test_results(submission_id)]
         if request.args.get("events") == "1":
             events = []
@@ -1016,6 +1116,283 @@ def create_app(service=None):
     def inspector_stress():
         rate_limit("stress")
         return jsonify(service.stress(g.viewer)), 202
+
+    # ---------------------------------------------------------------- contests
+    def contest_summary(contest):
+        return {"slug": contest["slug"], "title": contest["title"], "starts_at": contest["starts_at"],
+                "ends_at": contest["ends_at"], "phase": contestmod.phase(contest),
+                "exam_mode": bool(contest["exam_mode"]), "max_exits": contest["max_exits"],
+                "hidden": bool(contest["hidden"]), "problem_count": len(service.db.contest_problems(contest["id"]))}
+
+    def contest_table(contest):
+        problems = service.db.contest_problems(contest["id"])
+        return contestmod.standings(contest, problems, service.db.contest_submissions(contest["id"]))
+
+    def problem_titles(slugs):
+        titles = {}
+        for slug in slugs:
+            try:
+                titles[slug] = problemstore.read_meta(slug).get("title", slug)
+            except (OSError, ValueError):
+                titles[slug] = slug
+        return titles
+
+    @app.get("/api/contests")
+    def contests():
+        rows = service.db.list_contests(include_hidden=g.viewer.is_admin)
+        return jsonify({"contests": [contest_summary(c) for c in rows], "server_time": time.time()})
+
+    @app.get("/api/contests/<slug>")
+    def contest_detail(slug):
+        contest = visible_contest(slug)
+        data = contest_summary(contest)
+        data["description"] = contest["description"]
+        data["server_time"] = time.time()
+        data["problems"] = []
+        if g.viewer.is_admin or data["phase"] != "upcoming":
+            table = contest_table(contest)
+            mine = next((r for r in table["rows"] if g.viewer.user and r["username"] == g.viewer.user["username"]), None)
+            for i, slug_ in enumerate(table["problems"]):
+                try:
+                    meta = problemstore.read_meta(slug_)
+                except (OSError, ValueError):
+                    continue
+                cell = mine["cells"][slug_] if mine else None
+                data["problems"].append({
+                    "letter": contestmod.letter(i), "slug": slug_, "title": meta.get("title", slug_),
+                    "difficulty": meta.get("difficulty", "Easy"),
+                    "solved_by": sum(1 for r in table["rows"] if r["cells"][slug_]["solved"]),
+                    "tried_by": sum(1 for r in table["rows"] if r["cells"][slug_]["solved"] or r["cells"][slug_]["attempts"]),
+                    "mine": None if cell is None else ("solved" if cell["solved"] else "attempted" if cell["attempts"] else None),
+                })
+        data["participating"] = bool(g.viewer.user)
+        return jsonify(data)
+
+    @app.get("/api/contests/<slug>/standings")
+    def contest_standings(slug):
+        contest = visible_contest(slug)
+        table = contest_table(contest) if (g.viewer.is_admin or contestmod.phase(contest) != "upcoming") \
+            else {"problems": [], "rows": [], "first_solves": {}}
+        titles = problem_titles(table["problems"])
+        if g.viewer.is_admin and contest["exam_mode"]:
+            # Only the teacher sees how often each student left the exam.
+            counts = service.db.contest_event_counts(contest["id"])
+            by_name = {}
+            for user_id, entry in counts.items():
+                owner = service.db.get_user(user_id)
+                if owner:
+                    by_name[owner["username"]] = entry
+            # A student who left the exam but has not submitted yet has no row:
+            # add one, so the teacher sees them (and can unlock them).
+            listed = {r["username"] for r in table["rows"]}
+            for name in sorted(set(by_name) - listed, key=str.lower):
+                table["rows"].append({"username": name, "solved": 0, "penalty": 0, "last_ac_min": 0,
+                                      "rank": len(table["rows"]) + 1,
+                                      "cells": {p: {"solved": False, "attempts": 0, "time_min": None, "pending": 0}
+                                                for p in table["problems"]}})
+            for row in table["rows"]:
+                row["integrity"] = by_name.get(row["username"], {"total": 0})
+                owner = service.db.get_user_by_name(row["username"])
+                row["locked"] = bool(owner and service.db.exam_state(contest["id"], owner["id"])["locked"])
+        return jsonify({**contest_summary(contest), "server_time": time.time(),
+                        "problems": [{"letter": contestmod.letter(i), "slug": p, "title": titles[p]}
+                                     for i, p in enumerate(table["problems"])],
+                        "rows": table["rows"], "first_solves": table["first_solves"],
+                        "me": g.viewer.user["username"] if g.viewer.user else None})
+
+    @app.get("/api/contests/<slug>/standings.csv")
+    def contest_standings_csv(slug):
+        require_admin()
+        contest = visible_contest(slug)
+        table = contest_table(contest)
+        body = contestmod.standings_csv(contest, table, problem_titles(table["problems"]))
+        return Response(body, mimetype="text/csv", headers={
+            "Content-Disposition": f'attachment; filename="{contest["slug"]}-standings.csv"'})
+
+    @app.post("/api/contests/<slug>/integrity")
+    def contest_integrity(slug):
+        """
+        Exam mode: the exam page reports when the student leaves it. A web page
+        cannot STOP a student from switching windows (the browser does not
+        allow that), but it can notice and record it, with the time.
+        """
+        contest = visible_contest(slug)
+        if not g.viewer.user or not contest["exam_mode"] or contestmod.phase(contest) != "running":
+            return jsonify({"recorded": False})
+        body = read_json()
+        kind = body.get("kind")
+        if kind not in contestmod.EVENT_KINDS:
+            raise ApiError(400, "invalid_event", "unknown event kind")
+        detail = str(body.get("detail", ""))[:200]
+        # At most 120 records a minute per student, so a script cannot flood the table.
+        if service.db.count_recent_contest_events(contest["id"], g.viewer.user_id, time.time() - 60) >= 120:
+            return jsonify({"recorded": False})
+        service.db.add_contest_event(contest["id"], g.viewer.user_id, kind, detail)
+        return jsonify({"recorded": True, **exam_status_for(contest)})
+
+    def exam_status_for(contest):
+        state = service.db.exam_state(contest["id"], g.viewer.user_id)
+        limit = contest["max_exits"]
+        if limit and not state["locked"] and state["exits"] >= limit:
+            service.db.lock_exam(contest["id"], g.viewer.user_id)
+            state["locked"] = True
+        return {"locked": state["locked"], "exits": state["exits"], "max_exits": limit,
+                "exits_left": None if not limit else max(0, limit - state["exits"])}
+
+    @app.get("/api/contests/<slug>/exam-status")
+    def contest_exam_status(slug):
+        contest = visible_contest(slug)
+        if not g.viewer.user or not contest["exam_mode"]:
+            return jsonify({"locked": False, "exits": 0, "max_exits": 0, "exits_left": None})
+        return jsonify(exam_status_for(contest))
+
+    # ------------------------------------------------------- admin: contests
+    def admin_contest(slug):
+        contest = service.db.get_contest(slug)
+        if contest is None:
+            raise ApiError(404, "contest_not_found", f"unknown contest: {slug!r}")
+        return contest
+
+    def admin_contest_payload(contest):
+        return {**contest_summary(contest), "description": contest["description"],
+                "problems": service.db.contest_problems(contest["id"])}
+
+    @app.get("/api/admin/contests")
+    def admin_contests():
+        require_admin()
+        return jsonify({"contests": [contest_summary(c) for c in service.db.list_contests(include_hidden=True)]})
+
+    @app.get("/api/admin/contests/<slug>")
+    def admin_contest_get(slug):
+        require_admin()
+        return jsonify(admin_contest_payload(admin_contest(slug)))
+
+    @app.post("/api/admin/contests")
+    def admin_contest_create():
+        require_admin()
+        try:
+            slug, title, description, start, end, problems, exam_mode, max_exits = contestmod.clean(
+                read_json(), creating=True, known_problems=set(problemstore.list_slugs()))
+        except contestmod.ContestError as exc:
+            raise ApiError(400, "invalid_contest", str(exc)) from None
+        if service.db.get_contest(slug):
+            raise ApiError(409, "contest_exists", f"a contest with the slug '{slug}' already exists")
+        contest_id = service.db.create_contest(slug, title, description, start, end)
+        service.db.update_contest(contest_id, title, description, start, end, exam_mode, max_exits)
+        service.db.set_contest_problems(contest_id, problems)
+        return jsonify(admin_contest_payload(service.db.get_contest(slug))), 201
+
+    @app.put("/api/admin/contests/<slug>")
+    def admin_contest_update(slug):
+        require_admin()
+        contest = admin_contest(slug)
+        try:
+            _, title, description, start, end, problems, exam_mode, max_exits = contestmod.clean(
+                read_json(), creating=False, known_problems=set(problemstore.list_slugs()))
+        except contestmod.ContestError as exc:
+            raise ApiError(400, "invalid_contest", str(exc)) from None
+        service.db.update_contest(contest["id"], title, description, start, end, exam_mode, max_exits)
+        service.db.set_contest_problems(contest["id"], problems)
+        return jsonify(admin_contest_payload(service.db.get_contest(slug)))
+
+    @app.post("/api/admin/contests/<slug>/visibility")
+    def admin_contest_visibility(slug):
+        require_admin()
+        contest = admin_contest(slug)
+        service.db.set_contest_hidden(contest["id"], bool(read_json().get("hidden")))
+        return jsonify(admin_contest_payload(service.db.get_contest(slug)))
+
+    @app.post("/api/admin/contests/<slug>/unlock")
+    def admin_contest_unlock(slug):
+        require_admin()
+        contest = admin_contest(slug)
+        user = service.db.get_user_by_name(str(read_json().get("username", "")))
+        if user is None:
+            raise ApiError(404, "user_not_found", "unknown account")
+        released = service.db.unlock_exam(contest["id"], user["id"], g.viewer.user["username"])
+        return jsonify({"unlocked": bool(released), "username": user["username"]})
+
+    @app.delete("/api/admin/contests/<slug>")
+    def admin_contest_delete(slug):
+        require_admin()
+        contest = admin_contest(slug)
+        if read_json().get("confirm") != slug:
+            raise ApiError(400, "confirm_required", "send {\"confirm\": \"<slug>\"} to delete")
+        service.db.delete_contest(contest["id"])
+        return jsonify({"deleted": slug})
+
+    # --------------------------------------------------- admin: one student
+    @app.get("/api/admin/users/<username>")
+    def admin_user(username):
+        require_admin()
+        user = service.db.get_user_by_name(username)
+        if user is None:
+            raise ApiError(404, "user_not_found", f"no account {username!r}")
+        subs = service.db.list_submissions(limit=100000, user_id=user["id"])
+        verdicts = {}
+        per_problem = {}
+        for s_ in reversed(subs):                               # oldest first
+            verdicts[s_["status"]] = verdicts.get(s_["status"], 0) + 1
+            p = per_problem.setdefault(s_["problem_slug"], {"problem": s_["problem_slug"], "attempts": 0,
+                                                            "solved": False, "first_ac_id": None,
+                                                            "last_id": None, "last_status": None})
+            p["attempts"] += 1
+            p["last_id"], p["last_status"] = s_["id"], s_["status"]
+            if s_["status"] == config.ACCEPTED and not p["solved"]:
+                p["solved"], p["first_ac_id"] = True, s_["id"]
+        titles = problem_titles(per_problem)
+        for slug_, p in per_problem.items():
+            p["title"] = titles[slug_]
+        return jsonify({
+            "user": {"username": user["username"], "is_admin": bool(user["is_admin"]),
+                     "created_at": user["created_at"], "last_login_at": user["last_login_at"]},
+            "totals": {"submissions": len(subs), "solved": sum(p["solved"] for p in per_problem.values()),
+                       "tried": len(per_problem), "verdicts": verdicts},
+            "problems": sorted(per_problem.values(), key=lambda p: p["problem"]),
+            "submissions": [public_submission(r) for r in subs[:300]],
+            "exam_events": [{**e, "label": contestmod.EVENT_KINDS.get(e["kind"], e["kind"])}
+                            for e in service.db.contest_events_of_user(user["id"])],
+        })
+
+    # ----------------------------------------------- admin: similarity check
+    @app.get("/api/admin/similarity")
+    def admin_similarity():
+        require_admin()
+        problem_slug = request.args.get("problem", "")
+        if not problemstore.exists(problem_slug):
+            raise ApiError(400, "unknown_problem", "choose a problem")
+        contest_id = None
+        if request.args.get("contest"):
+            contest_id = admin_contest(request.args["contest"])["id"]
+        try:
+            threshold = min(1.0, max(0.0, float(request.args.get("threshold", 0.5))))
+        except ValueError:
+            raise ApiError(400, "invalid_threshold", "threshold must be a number between 0 and 1") from None
+        result = similarity.compare_submissions(
+            service.db.submissions_of_problem(problem_slug, contest_id), threshold=threshold)
+        return jsonify({**result, "problem": problem_slug, "threshold": threshold})
+
+    @app.get("/api/admin/similarity/pair")
+    def admin_similarity_pair():
+        require_admin()
+        try:
+            a = service.db.get_submission(int(request.args.get("a", "")))
+            b = service.db.get_submission(int(request.args.get("b", "")))
+        except ValueError:
+            a = b = None
+        if not a or not b:
+            raise ApiError(404, "submission_not_found", "unknown submission")
+        lines_a, lines_b = similarity.shared_lines(a["source"], b["source"], a["language"])
+        fp_a = similarity.fingerprints(similarity.normalize(a["source"], a["language"]))
+        fp_b = similarity.fingerprints(similarity.normalize(b["source"], b["language"]))
+
+        def side(row, lines):
+            owner = service.db.get_user(row["user_id"]) if row["user_id"] else None
+            return {"submission_id": row["id"], "username": owner["username"] if owner else "anonymous",
+                    "language": row["language"], "status": row["status"], "source": row["source"],
+                    "shared_lines": lines}
+        return jsonify({"score": round(similarity.score(fp_a, fp_b), 3),
+                        "a": side(a, lines_a), "b": side(b, lines_b)})
 
     # ---------------------------------------------------------------- accounts
     @app.get("/api/auth/me")

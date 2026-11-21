@@ -9,6 +9,8 @@ Tables
     users         accounts (Phase 4b): username, scrypt password hash, admin flag
     auth_sessions logged-in browsers: only the SHA-256 of the login token is
                   stored, so a copy of the database cannot be used to log in
+    contests      timed problem sets (start/end); contest_problems lists their
+                  problems; a submission made inside a contest has contest_id
 
 Status model (the only legal moves):
 
@@ -114,6 +116,48 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     expires_at   REAL    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS contests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug         TEXT    NOT NULL UNIQUE,
+    title        TEXT    NOT NULL,
+    description  TEXT    NOT NULL DEFAULT '',
+    starts_at    REAL    NOT NULL,
+    ends_at      REAL    NOT NULL,
+    hidden       INTEGER NOT NULL DEFAULT 1,
+    created_at   REAL    NOT NULL
+);
+
+-- Exam mode: every time a contestant leaves the exam page (tab switch, window
+-- blur, leaving fullscreen) or pastes a large text, the browser reports it here.
+CREATE TABLE IF NOT EXISTS contest_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    contest_id   INTEGER NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind         TEXT    NOT NULL,
+    detail       TEXT    NOT NULL DEFAULT '',
+    ts           REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_contest_events ON contest_events(contest_id, user_id, id);
+
+-- Exam locks: a student who left the exam too often is locked out (no more
+-- submissions) until the teacher unlocks them. released_at = NULL: still locked.
+CREATE TABLE IF NOT EXISTS contest_locks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    contest_id   INTEGER NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    locked_at    REAL    NOT NULL,
+    released_at  REAL,
+    released_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_contest_locks ON contest_locks(contest_id, user_id);
+
+CREATE TABLE IF NOT EXISTS contest_problems (
+    contest_id   INTEGER NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+    problem_slug TEXT    NOT NULL,
+    position     INTEGER NOT NULL,
+    PRIMARY KEY (contest_id, problem_slug)
+);
 """
 
 
@@ -145,6 +189,16 @@ class Database:
             self._conn.execute("ALTER TABLE submissions ADD COLUMN session_id TEXT")
         if "user_id" not in columns:
             self._conn.execute("ALTER TABLE submissions ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        if "contest_id" not in columns:
+            self._conn.execute("ALTER TABLE submissions ADD COLUMN contest_id INTEGER REFERENCES contests(id)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_submissions_contest ON submissions(contest_id, id)")
+        contest_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(contests)")}
+        if "exam_mode" not in contest_columns:
+            self._conn.execute("ALTER TABLE contests ADD COLUMN exam_mode INTEGER NOT NULL DEFAULT 0")
+        if "max_exits" not in contest_columns:
+            # 0 = only record; N = lock the exam after N exits
+            self._conn.execute("ALTER TABLE contests ADD COLUMN max_exits INTEGER NOT NULL DEFAULT 0")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_submissions_session ON submissions(session_id, id)")
         self._conn.execute(
@@ -179,13 +233,15 @@ class Database:
             self._conn.close()
 
     # ---------------------------------------------------------------- submissions
-    def create_submission(self, problem_slug, language, source, session_id=None, user_id=None):
+    def create_submission(self, problem_slug, language, source, session_id=None, user_id=None,
+                          contest_id=None):
         """Insert a new submission in the Pending state and return its id."""
         with self._tx() as c:
             cur = c.execute(
                 "INSERT INTO submissions (problem_slug, language, source, status, session_id, user_id, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (problem_slug, language, source, config.PENDING, session_id, user_id, time.time()))
+                "contest_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (problem_slug, language, source, config.PENDING, session_id, user_id, contest_id,
+                 time.time()))
             return cur.lastrowid
 
     def discard_pending(self, submission_id):
@@ -326,6 +382,129 @@ class Database:
     def touch_login(self, user_id):
         with self._tx() as c:
             c.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (time.time(), user_id))
+
+    def submissions_of_problem(self, problem_slug, contest_id=None):
+        """Every finished submission of one problem made by an account (for the similarity check)."""
+        sql = ("SELECT s.id, s.user_id, u.username, s.language, s.source, s.status, s.created_at "
+               "FROM submissions s JOIN users u ON u.id = s.user_id "
+               "WHERE s.problem_slug = ? AND s.status NOT IN (?, ?)")
+        params = [problem_slug, config.PENDING, config.RUNNING]
+        if contest_id is not None:
+            sql += " AND s.contest_id = ?"
+            params.append(contest_id)
+        return self._all(sql + " ORDER BY s.id", params)
+
+    # ------------------------------------------------------------------ contests
+    def create_contest(self, slug, title, description, starts_at, ends_at):
+        with self._tx() as c:
+            return c.execute(
+                "INSERT INTO contests (slug, title, description, starts_at, ends_at, hidden, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 1, ?)",
+                (slug, title, description, starts_at, ends_at, time.time())).lastrowid
+
+    def update_contest(self, contest_id, title, description, starts_at, ends_at, exam_mode=False, max_exits=0):
+        with self._tx() as c:
+            c.execute("UPDATE contests SET title = ?, description = ?, starts_at = ?, ends_at = ?, exam_mode = ?, "
+                      "max_exits = ? WHERE id = ?",
+                      (title, description, starts_at, ends_at, 1 if exam_mode else 0, max_exits, contest_id))
+
+    # --- exam locks
+    EXIT_KINDS = ("tab_hidden", "window_blur", "fullscreen_exit")
+
+    def exam_state(self, contest_id, user_id):
+        """{"locked", "exits"}: exits counted since the last unlock."""
+        lock = self._one("SELECT * FROM contest_locks WHERE contest_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                         (contest_id, user_id))
+        since = lock["released_at"] if lock and lock["released_at"] else 0
+        row = self._one(f"SELECT COUNT(*) AS n FROM contest_events WHERE contest_id = ? AND user_id = ? AND ts > ? "
+                        f"AND kind IN ({','.join('?' * len(self.EXIT_KINDS))})",
+                        (contest_id, user_id, since, *self.EXIT_KINDS))
+        return {"locked": bool(lock and lock["released_at"] is None), "exits": row["n"] if row else 0}
+
+    def lock_exam(self, contest_id, user_id):
+        with self._tx() as c:
+            open_lock = c.execute("SELECT id FROM contest_locks WHERE contest_id = ? AND user_id = ? "
+                                  "AND released_at IS NULL", (contest_id, user_id)).fetchone()
+            if open_lock is None:
+                c.execute("INSERT INTO contest_locks (contest_id, user_id, locked_at) VALUES (?, ?, ?)",
+                          (contest_id, user_id, time.time()))
+
+    def unlock_exam(self, contest_id, user_id, by):
+        with self._tx() as c:
+            return c.execute("UPDATE contest_locks SET released_at = ?, released_by = ? WHERE contest_id = ? "
+                             "AND user_id = ? AND released_at IS NULL",
+                             (time.time(), by, contest_id, user_id)).rowcount
+
+    def add_contest_event(self, contest_id, user_id, kind, detail):
+        with self._tx() as c:
+            c.execute("INSERT INTO contest_events (contest_id, user_id, kind, detail, ts) VALUES (?, ?, ?, ?, ?)",
+                      (contest_id, user_id, kind, detail, time.time()))
+
+    def contest_event_counts(self, contest_id):
+        """{user_id: {"total": n, kind: n, ...}} for the standings."""
+        counts = {}
+        for row in self._all("SELECT user_id, kind, COUNT(*) AS n FROM contest_events WHERE contest_id = ? "
+                             "GROUP BY user_id, kind", (contest_id,)):
+            entry = counts.setdefault(row["user_id"], {"total": 0})
+            entry[row["kind"]] = row["n"]
+            entry["total"] += row["n"]
+        return counts
+
+    def contest_events_of_user(self, user_id, contest_id=None):
+        sql = ("SELECT e.kind, e.detail, e.ts, c.slug AS contest, c.title AS contest_title "
+               "FROM contest_events e JOIN contests c ON c.id = e.contest_id WHERE e.user_id = ?")
+        params = [user_id]
+        if contest_id is not None:
+            sql += " AND e.contest_id = ?"
+            params.append(contest_id)
+        return self._all(sql + " ORDER BY e.id DESC LIMIT 500", params)
+
+    def count_recent_contest_events(self, contest_id, user_id, since):
+        row = self._one("SELECT COUNT(*) AS n FROM contest_events WHERE contest_id = ? AND user_id = ? AND ts > ?",
+                        (contest_id, user_id, since))
+        return row["n"] if row else 0
+
+    def set_contest_hidden(self, contest_id, hidden):
+        with self._tx() as c:
+            c.execute("UPDATE contests SET hidden = ? WHERE id = ?", (1 if hidden else 0, contest_id))
+
+    def delete_contest(self, contest_id):
+        """Delete a contest. Its submissions stay, they just no longer belong to a contest."""
+        with self._tx() as c:
+            c.execute("UPDATE submissions SET contest_id = NULL WHERE contest_id = ?", (contest_id,))
+            c.execute("DELETE FROM contests WHERE id = ?", (contest_id,))
+
+    def get_contest(self, slug):
+        return self._one("SELECT * FROM contests WHERE slug = ?", (slug,))
+
+    def get_contest_by_id(self, contest_id):
+        return self._one("SELECT * FROM contests WHERE id = ?", (contest_id,))
+
+    def list_contests(self, include_hidden=False):
+        sql = "SELECT * FROM contests" + ("" if include_hidden else " WHERE hidden = 0")
+        return self._all(sql + " ORDER BY starts_at DESC")
+
+    def set_contest_problems(self, contest_id, slugs):
+        with self._tx() as c:
+            c.execute("DELETE FROM contest_problems WHERE contest_id = ?", (contest_id,))
+            for position, slug in enumerate(slugs):
+                c.execute("INSERT INTO contest_problems (contest_id, problem_slug, position) VALUES (?, ?, ?)",
+                          (contest_id, slug, position))
+
+    def contest_problems(self, contest_id):
+        return [r["problem_slug"] for r in self._all(
+            "SELECT problem_slug FROM contest_problems WHERE contest_id = ? ORDER BY position", (contest_id,))]
+
+    def contests_with_problem(self, problem_slug):
+        return self._all("SELECT c.* FROM contests c JOIN contest_problems p ON p.contest_id = c.id "
+                         "WHERE p.problem_slug = ?", (problem_slug,))
+
+    def contest_submissions(self, contest_id):
+        """Submissions of a contest by non-admin accounts, oldest first (for the standings)."""
+        return self._all(
+            "SELECT s.id, s.user_id, u.username, s.problem_slug, s.status, s.created_at "
+            "FROM submissions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.contest_id = ? AND u.is_admin = 0 ORDER BY s.id", (contest_id,))
 
     # ------------------------------------------------------------- login sessions
     def create_auth_session(self, token_hash, user_id, ttl_s):

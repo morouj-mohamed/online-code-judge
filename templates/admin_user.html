@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ username }} · Admin · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="admin-user" data-username="{{ username }}">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/admin"><span data-icon="arrow-left" data-size="14"></span>Admin</a></nav>
+      <h1 class="row"><span class="avatar avatar-lg" aria-hidden="true">{{ username[:1] | upper }}</span>{{ username }}</h1>
+      <p class="muted js-subtitle"></p>
+    </div>
+  </div>
+  <div id="user-region" aria-busy="true"><div class="skeleton" style="height: 240px; border-radius: 12px"></div></div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin-user.js') }}"></script>{% endblock %}

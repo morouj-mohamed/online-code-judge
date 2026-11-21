@@ -3,13 +3,27 @@
 {% block body_class %}app-page{% endblock %}
 {% block header_class %}bar{% endblock %}
 {% block content %}
-<div class="workspace" id="workspace" data-slug="{{ problem.slug }}">
+<div class="workspace" id="workspace" data-slug="{{ problem.slug }}"
+     data-contest="{{ contest.slug if contest else '' }}" data-exam="{{ '1' if contest and contest.exam_mode else '0' }}">
   <section class="pane pane-statement" aria-labelledby="problem-title">
     <div class="pane-scroll">
       <header class="problem-head">
         <nav class="crumbs" aria-label="Breadcrumb">
+          {% if contest %}
+          <a href="/contests/{{ contest.slug }}"><span data-icon="arrow-left" data-size="14"></span>{{ contest.title }}</a>
+          {% else %}
           <a href="/"><span data-icon="arrow-left" data-size="14"></span>All problems</a>
+          {% endif %}
         </nav>
+        {% if contest %}
+        <div class="contest-strip js-contest-strip" data-ends="{{ contest.ends_at }}" data-starts="{{ contest.starts_at }}" role="status">
+          <span data-icon="trophy" data-size="14"></span>
+          <span>{{ contest.title }}</span>
+          {% if contest.exam_mode %}<span class="state-badge" data-state="hidden"><span data-icon="lock" data-size="13"></span>Exam mode</span>{% endif %}
+          <span class="spacer"></span>
+          <span class="countdown js-countdown" aria-live="off">—</span>
+        </div>
+        {% endif %}
         <h1 id="problem-title"><span class="letter">{{ problem.index }}</span>{{ problem.title }}</h1>
         <div class="row-wrap">
           <span class="js-status"></span>

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit contest' if slug else 'New contest' }} · Admin · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="admin-contest" data-slug="{{ slug }}">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/admin"><span data-icon="arrow-left" data-size="14"></span>Admin</a></nav>
+      <h1 class="js-heading">{{ 'Edit contest' if slug else 'New contest' }}</h1>
+      <div class="row-wrap js-badges"></div>
+    </div>
+    <div class="row-wrap js-head-actions"></div>
+  </div>
+  <form class="admin-form js-form" novalidate>
+    <div class="form-error js-error" role="alert" hidden></div>
+    <section class="card card-pad stack" aria-labelledby="c-details">
+      <h2 id="c-details" class="card-title">Details</h2>
+      <div class="form-grid">
+        <div class="field field-wide">
+          <label for="c-title">Title</label>
+          <input class="input" id="c-title" name="title" required maxlength="100" placeholder="Midterm exam">
+        </div>
+        <div class="field">
+          <label for="c-slug">URL slug</label>
+          <input class="input mono" id="c-slug" name="slug" required spellcheck="false" aria-describedby="c-slug-hint">
+          <p class="hint" id="c-slug-hint">/contests/<span class="js-slug-preview">…</span></p>
+        </div>
+        <div class="field">
+          <label for="c-start">Starts</label>
+          <input class="input" id="c-start" name="starts" type="datetime-local" required>
+        </div>
+        <div class="field">
+          <label for="c-end">Ends</label>
+          <input class="input" id="c-end" name="ends" type="datetime-local" required>
+        </div>
+        <div class="field field-wide">
+          <label for="c-description">Description (Markdown, optional)</label>
+          <textarea class="input textarea" id="c-description" name="description" rows="4" placeholder="Rules, allowed material, scoring…"></textarea>
+        </div>
+        <div class="field field-wide">
+          <label class="check">
+            <input type="checkbox" id="c-exam" name="exam_mode">
+            <span><strong>Exam mode</strong> — students must stay in fullscreen; every time they leave the exam page
+              (other tab, other program, leaving fullscreen) or paste a large block of text, it is recorded with the time
+              and shown to you in the standings.</span>
+          </label>
+        </div>
+        <div class="field js-exits-field">
+          <label for="c-max-exits">Lock the exam after</label>
+          <select class="select" id="c-max-exits" name="max_exits" aria-describedby="c-exits-hint">
+            <option value="0">Never (only record)</option>
+            <option value="1">1 exit</option>
+            <option value="3" selected>3 exits</option>
+            <option value="5">5 exits</option>
+          </select>
+          <p class="hint" id="c-exits-hint">A locked student cannot submit anymore (enforced by the server) until you unlock them in the standings.</p>
+        </div>
+      </div>
+    </section>
+    <section class="card card-pad stack" aria-labelledby="c-problems">
+      <div class="section-title"><h2 id="c-problems" class="card-title">Problems</h2><span class="spacer"></span>
+        <span class="subtle" style="font-size: var(--text-xs)">Hidden problems are fine: contestants see them only during the contest.</span></div>
+      <p class="muted" style="font-size: var(--text-sm)">Tick the problems in the order you want (A, B, C …). Use the arrows to reorder.</p>
+      <ol class="pick-list js-picks" aria-label="Problems in the contest"></ol>
+      <div class="field"><label for="c-add">Add a problem</label>
+        <select class="select js-add" id="c-add"><option value="">Choose…</option></select></div>
+    </section>
+    <div class="form-actions">
+      <span class="subtle js-save-note" aria-live="polite"></span><span class="spacer"></span>
+      <button class="btn btn-primary js-save" type="submit"><span data-icon="check" data-size="14"></span>
+        <span class="btn-label-idle">{{ 'Save changes' if slug else 'Create contest' }}</span><span class="btn-label-busy">Saving…</span></button>
+    </div>
+  </form>
+  <section class="card card-pad stack danger-zone js-danger" aria-labelledby="c-danger" {% if not slug %}hidden{% endif %}>
+    <h2 id="c-danger" class="card-title">Delete contest</h2>
+    <p class="muted">Submissions stay in the history, but the standings are gone.</p>
+    <div class="row-wrap">
+      <label class="sr-only" for="c-delete-confirm">Type the slug to confirm</label>
+      <input class="input mono" id="c-delete-confirm" placeholder="type the slug to confirm" autocomplete="off">
+      <button class="btn btn-danger js-delete" type="button" disabled><span data-icon="x" data-size="14"></span>Delete forever</button>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin-contest.js') }}"></script>{% endblock %}

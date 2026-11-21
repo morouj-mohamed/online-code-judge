@@ -44,8 +44,15 @@ async function request(method, path, body) {
 
 export const api = {
   problems: () => request("GET", "/api/problems"),
-  problem: (slug) => request("GET", `/api/problems/${encodeURIComponent(slug)}`),
-  submit: (problem, language, code) => request("POST", "/api/submit", { problem, language, code }),
+  problem: (slug, contest) =>
+    request("GET", `/api/problems/${encodeURIComponent(slug)}${contest ? `?contest=${encodeURIComponent(contest)}` : ""}`),
+  contests: () => request("GET", "/api/contests"),
+  contest: (slug) => request("GET", `/api/contests/${encodeURIComponent(slug)}`),
+  standings: (slug) => request("GET", `/api/contests/${encodeURIComponent(slug)}/standings`),
+  examStatus: (slug) => request("GET", `/api/contests/${encodeURIComponent(slug)}/exam-status`),
+  examEvent: (slug, kind, detail = "") => request("POST", `/api/contests/${encodeURIComponent(slug)}/integrity`, { kind, detail }),
+  submit: (problem, language, code, contest) =>
+    request("POST", "/api/submit", contest ? { problem, language, code, contest } : { problem, language, code }),
   runSample: (problem, language, code) => request("POST", "/api/run-sample", { problem, language, code }),
   submissions: (limit = 50, scope = "mine") => request("GET", `/api/submissions?limit=${limit}&scope=${scope}`),
   submission: (id, withEvents = false) =>
@@ -70,6 +77,17 @@ export const api = {
       form.append("file", file);
       return request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/tests`, form);
     },
+    contests: () => request("GET", "/api/admin/contests"),
+    contest: (slug) => request("GET", `/api/admin/contests/${encodeURIComponent(slug)}`),
+    createContest: (data) => request("POST", "/api/admin/contests", data),
+    updateContest: (slug, data) => request("PUT", `/api/admin/contests/${encodeURIComponent(slug)}`, data),
+    contestVisibility: (slug, hidden) => request("POST", `/api/admin/contests/${encodeURIComponent(slug)}/visibility`, { hidden }),
+    deleteContest: (slug) => request("DELETE", `/api/admin/contests/${encodeURIComponent(slug)}`, { confirm: slug }),
+    unlock: (slug, username) => request("POST", `/api/admin/contests/${encodeURIComponent(slug)}/unlock`, { username }),
+    user: (name) => request("GET", `/api/admin/users/${encodeURIComponent(name)}`),
+    similarity: (problem, contest, threshold) => request("GET",
+      `/api/admin/similarity?problem=${encodeURIComponent(problem)}&threshold=${threshold}${contest ? `&contest=${encodeURIComponent(contest)}` : ""}`),
+    pair: (a, b) => request("GET", `/api/admin/similarity/pair?a=${a}&b=${b}`),
     validate: (slug, language, code) =>
       request("POST", `/api/admin/problems/${encodeURIComponent(slug)}/validate`, { language, code }),
   },
@@ -80,5 +98,6 @@ export function describeError(err) {
   if (!(err instanceof ApiError)) return "Something went wrong. Please try again.";
   if (err.code === "rate_limited") return `Slow down a little: try again in ${err.retryAfter || 60} s.`;
   if (err.code === "queue_full") return "The judge queue is full right now. Try again in a few seconds.";
+  if (err.code === "login_required") return "Log in first: contests need an account.";
   return err.message;
 }

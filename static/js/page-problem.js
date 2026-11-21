@@ -10,7 +10,10 @@ import { api, describeError } from "./api.js";
 import { announce, boot } from "./app.js";
 import { renderDiff } from "./diff.js";
 import { createEditor, starterCode } from "./editor.js";
-import { escapeHtml, formatKb, formatMs, LANGUAGE_LABELS, verdictBadge, debounce } from "./format.js";
+import {
+  escapeHtml, formatCountdown, formatKb, formatMs, LANGUAGE_LABELS, startCountdown, verdictBadge, debounce,
+} from "./format.js";
+import { startExamMode } from "./exam-mode.js";
 import { icon } from "./icons.js";
 import { renderMarkdown } from "./markdown.js";
 import {
@@ -22,6 +25,11 @@ boot();
 
 const workspace = document.getElementById("workspace");
 const slug = workspace.dataset.slug;
+// Opened from a contest? Then submissions go to that contest (and count for its standings).
+const contest = workspace.dataset.contest || null;
+const examMode = workspace.dataset.exam === "1" && document.body.dataset.admin !== "1";
+let contestPhase = null;
+let examLocked = false;
 const languageSelect = document.getElementById("language");
 const runButton = document.querySelector(".js-run");
 const submitButton = document.querySelector(".js-submit");
@@ -306,14 +314,34 @@ async function runSample() {
   }
 }
 
+function contestBlocksSubmit() {
+  if (!contest) return false;
+  if (!document.body.dataset.user) {
+    toast({ title: "Log in to take part", message: "Contest submissions need an account.", kind: "warning",
+      actions: [{ label: "Log in", primary: true, onClick: () => { location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`; } }] });
+    return true;
+  }
+  if (examLocked) {
+    toast({ title: "Your exam is locked", message: "Ask your teacher to unlock it.", kind: "error" });
+    return true;
+  }
+  if (contestPhase && contestPhase !== "running") {
+    toast({ title: contestPhase === "ended" ? "The contest is over" : "The contest has not started",
+      message: "Run sample still works for practice.", kind: "warning" });
+    return true;
+  }
+  return false;
+}
+
 async function submit() {
   if (busy) return;
+  if (contestBlocksSubmit()) return;
   const code = codeOrWarn();
   if (code === null || languageLooksWrong(code, submit)) return;
   setBusy(submitButton, true);
   saveDraft(slug, language, code);
   try {
-    const created = await api.submit(slug, language, code);
+    const created = await api.submit(slug, language, code, contest);
     recordVerdict(slug, "Pending");            // at least "attempted" from now on
     window.location.href = `/submissions/${created.id}?since=${created.seq}`;
   } catch (error) {
@@ -334,13 +362,37 @@ document.addEventListener("keydown", (event) => {
   else runSample();
 });
 
+// ============================================================ contest mode ==
+function initContest() {
+  const strip = document.querySelector(".js-contest-strip");
+  if (!contest || !strip) return;
+  const countdown = strip.querySelector(".js-countdown");
+  startCountdown({ startsAt: Number(strip.dataset.starts), endsAt: Number(strip.dataset.ends) }, (left, phase) => {
+    contestPhase = phase;
+    strip.dataset.phase = phase;
+    countdown.textContent = phase === "running" ? `${formatCountdown(left)} left`
+      : phase === "upcoming" ? `starts in ${formatCountdown(left)}` : "contest over";
+    submitButton.title = phase === "running" ? "" : "Submissions are closed outside the contest time";
+  });
+  if (examMode && document.body.dataset.user) {
+    startExamMode({
+      contest,
+      onLockChange: (isLocked) => {
+        examLocked = isLocked;
+        submitButton.disabled = isLocked;
+      },
+    });
+  }
+}
+
 // ================================================================= start ====
 async function load() {
+  initContest();
   initSplitter();
   renderStatus();
   const editorReady = initEditor();
   try {
-    problem = await api.problem(slug);
+    problem = await api.problem(slug, contest);
     renderStatement();
     renderLimits();
   } catch (error) {

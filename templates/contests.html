@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Contests · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <h1>Contests</h1>
+      <p class="muted">Timed problem sets. Log in to take part; the standings follow ICPC rules.</p>
+    </div>
+    {% if viewer and viewer.is_admin %}<a class="btn btn-primary" href="/admin/contests/new"><span data-icon="plus"></span>New contest</a>{% endif %}
+  </div>
+  <div id="contests-region" aria-busy="true">
+    <div class="contest-grid" aria-hidden="true">
+      <div class="skeleton" style="height: 168px; border-radius: 12px"></div>
+      <div class="skeleton" style="height: 168px; border-radius: 12px"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-contests.js') }}"></script>{% endblock %}

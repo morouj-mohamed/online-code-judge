@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Similarity check · Admin · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="admin-similarity">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/admin"><span data-icon="arrow-left" data-size="14"></span>Admin</a></nav>
+      <h1>Similarity check</h1>
+      <p class="muted">Compares students' solutions of one problem by their <em>structure</em>: comments, spacing and
+        variable names are ignored, so renaming or re-formatting does not hide a copy (the MOSS / winnowing method).
+        A high score is a reason to look, not a proof.</p>
+    </div>
+  </div>
+  <form class="card card-pad js-form" aria-label="Similarity settings">
+    <div class="form-grid">
+      <div class="field"><label for="s-problem">Problem</label><select class="select" id="s-problem" required></select></div>
+      <div class="field"><label for="s-contest">Only in contest</label><select class="select" id="s-contest"><option value="">Any submission</option></select></div>
+      <div class="field"><label for="s-threshold">Show pairs from</label>
+        <select class="select" id="s-threshold"><option value="0.9">90% similar</option><option value="0.7">70% similar</option>
+          <option value="0.5" selected>50% similar</option><option value="0.3">30% similar</option></select></div>
+    </div>
+    <div class="row-wrap" style="margin-top: 16px"><span class="spacer"></span>
+      <button class="btn btn-primary js-run" type="submit"><span data-icon="search" data-size="14"></span>
+        <span class="btn-label-idle">Compare</span><span class="btn-label-busy">Comparing…</span></button></div>
+  </form>
+  <div id="sim-region" style="margin-top: 24px" aria-live="polite"></div>
+  <section class="js-pair" style="margin-top: 24px" aria-label="Side-by-side comparison"></section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin-similarity.js') }}"></script>{% endblock %}

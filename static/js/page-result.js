@@ -93,6 +93,12 @@ function skeletonShell() {
     </section>
 
     <details class="card disclosure">
+      <summary>${icon("chevron-right", { cls: "chev" })}${icon("file-code")}Source code
+        <span class="spacer"></span><span class="subtle js-src-meta" style="font-weight: 500"></span></summary>
+      <pre class="diff-lines code-view js-source" aria-label="Submitted source code"></pre>
+    </details>
+
+    <details class="card disclosure">
       <summary>${icon("chevron-right", { cls: "chev" })}${icon("terminal")}Under the hood: process lifecycle
         <span class="spacer"></span><span class="subtle js-tl-count" style="font-weight: 500"></span></summary>
       <ol class="timeline js-timeline" aria-label="Sandbox events"></ol>
@@ -388,10 +394,18 @@ function renderHeader() {
   const p = state.problem;
   document.querySelector(".js-title").textContent = p ? `${p.index}. ${p.title}` : s.problem;
   document.querySelector(".js-subtitle").innerHTML =
-    `${escapeHtml(LANGUAGE_LABELS[s.language] || s.language)} · submitted <time datetime="${new Date(s.created_at * 1000).toISOString()}">${escapeHtml(absoluteTime(s.created_at))}</time>`;
+    `${s.username ? `by <a href="/admin/users/${encodeURIComponent(s.username)}">${escapeHtml(s.username)}</a> · ` : ""}` +
+    `${escapeHtml(LANGUAGE_LABELS[s.language] || s.language)} · submitted <time datetime="${new Date(s.created_at * 1000).toISOString()}">${escapeHtml(absoluteTime(s.created_at))}</time>` +
+    `${s.contest ? ` · in <a href="/contests/${encodeURIComponent(s.contest.slug)}">${escapeHtml(s.contest.title)}</a>` : ""}`;
+  if (typeof s.source === "string") {
+    const lines = s.source.split("\n");
+    body.querySelector(".js-source").innerHTML = lines.map((line, i) =>
+      `<div class="diff-line"><span class="ln">${i + 1}</span><span class="tx">${escapeHtml(line) || " "}</span></div>`).join("");
+    body.querySelector(".js-src-meta").textContent = `${lines.length} lines`;
+  }
   document.querySelector(".js-actions").innerHTML = `
     <a class="btn" href="/submissions">${icon("list")}All submissions</a>
-    <a class="btn btn-primary" href="/problems/${encodeURIComponent(s.problem)}">${icon("file-code")}Edit &amp; resubmit</a>`;
+    <a class="btn btn-primary" href="/problems/${encodeURIComponent(s.problem)}${s.contest ? `?contest=${encodeURIComponent(s.contest.slug)}` : ""}">${icon("file-code")}Edit &amp; resubmit</a>`;
 }
 
 function listen() {

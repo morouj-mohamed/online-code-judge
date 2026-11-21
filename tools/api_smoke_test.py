@@ -561,6 +561,91 @@ def main():
         check("delete -> gone", status == 200 and status_after == 404)
         status, payload, _ = admin.request("GET", "/admin".replace("/admin", "/api/admin/problems"))
         check("admin overview lists accounts", status == 200 and any(u["username"] == name for u in payload["users"]))
+
+        # -------------------------------------------------------- 12b. contests
+        print("[12b] Contests, standings, exam mode, similarity")
+        now = time.time()
+        c_slug = "smoke-contest-" + secrets.token_hex(3)
+        body = {"slug": c_slug, "title": "Smoke Contest", "description": "Good luck", "starts_at": now - 5,
+                "ends_at": now + 600, "problems": ["sum-two", "max-array"], "exam_mode": True, "max_exits": 2}
+        status, payload, _ = admin.request("POST", "/api/admin/contests", body={**body, "ends_at": now - 10})
+        check("contest ending before it starts -> 400", status == 400 and is_error(payload, "invalid_contest"))
+        status, payload, _ = admin.request("POST", "/api/admin/contests", body=body)
+        check("create contest -> 201 (hidden until published)", status == 201 and payload["hidden"] and payload["phase"] == "running")
+        status, _, _ = alice.request("GET", f"/api/contests/{c_slug}")
+        check("hidden contest -> 404 for students", status == 404)
+        admin.request("POST", f"/api/admin/contests/{c_slug}/visibility", body={"hidden": False})
+        status, payload, _ = alice.request("POST", "/api/submit", body={"problem": "sum-two", "language": "python",
+                                                                        "code": quick_py, "contest": c_slug})
+        check("anonymous contest submission -> 401 login_required", status == 401 and is_error(payload, "login_required"))
+        # two students: erin solves A after one WA, frank solves A first try
+        erin, frank = Client(args.base), Client(args.base)
+        for who, nm in ((erin, "smoke_e_" + secrets.token_hex(3)), (frank, "smoke_f_" + secrets.token_hex(3))):
+            who.request("POST", "/api/auth/signup", body={"username": nm, "password": password})
+            who.name = nm
+        wrong_py = "a, b = map(int, input().split())\nprint(a - b)\n"
+        for who, code in ((erin, wrong_py), (erin, quick_py), (frank, quick_py)):
+            st, sub_, _ = who.request("POST", "/api/submit", body={"problem": "sum-two", "language": "python",
+                                                                    "code": code, "contest": c_slug})
+            follow(who, sub_["id"], sub_["seq"])
+        status, table, _ = erin.request("GET", f"/api/contests/{c_slug}/standings")
+        rows = {r["username"]: r for r in table["rows"]}
+        e_cell, f_cell = rows[erin.name]["cells"]["sum-two"], rows[frank.name]["cells"]["sum-two"]
+        check("standings: both solved A; the one without a wrong try ranks first",
+              e_cell["solved"] and f_cell["solved"] and e_cell["attempts"] == 1 and f_cell["attempts"] == 0
+              and rows[frank.name]["rank"] < rows[erin.name]["rank"]
+              and rows[erin.name]["penalty"] == rows[frank.name]["penalty"] + 20,
+              f"penalties {rows[frank.name]['penalty']} and {rows[erin.name]['penalty']}")
+        check("students do not see exam exits in the standings", "integrity" not in rows[erin.name])
+        status, _, _ = erin.request("GET", f"/api/contests/{c_slug}/standings.csv")
+        req = urllib.request.Request(args.base + f"/api/contests/{c_slug}/standings.csv")
+        with admin.opener.open(req, timeout=30) as resp:
+            csv_text = resp.read().decode("utf-8-sig")
+        check("CSV export: admin only, one line per student", status == 403 and csv_text.startswith("Rank,Username")
+              and frank.name in csv_text and erin.name in csv_text)
+        # exam mode: two exits lock frank; the server then refuses his submissions
+        for kind in ("tab_hidden", "fullscreen_exit"):
+            st, exam, _ = frank.request("POST", f"/api/contests/{c_slug}/integrity", body={"kind": kind})
+        check("exam mode: the 2nd exit locks the exam", exam["locked"] is True and exam["exits"] == 2)
+        st, payload, _ = frank.request("POST", "/api/submit", body={"problem": "max-array", "language": "python",
+                                                                    "code": quick_py, "contest": c_slug})
+        check("a locked student's submission is refused BY THE SERVER", st == 403 and is_error(payload, "exam_locked"))
+        _, table, _ = admin.request("GET", f"/api/contests/{c_slug}/standings")
+        frow = next(r for r in table["rows"] if r["username"] == frank.name)
+        check("the teacher sees the exits and the lock", frow["locked"] and frow["integrity"]["total"] == 2)
+        st, _, _ = admin.request("POST", f"/api/admin/contests/{c_slug}/unlock", body={"username": frank.name})
+        _, status_after, _ = frank.request("GET", f"/api/contests/{c_slug}/exam-status")
+        check("unlock -> the student can continue, exit count back to 0",
+              st == 200 and not status_after["locked"] and status_after["exits"] == 0)
+        st, user_page, _ = admin.request("GET", f"/api/admin/users/{frank.name}")
+        check("student page: totals, problems and exam events", st == 200 and user_page["totals"]["solved"] == 1
+              and len(user_page["exam_events"]) == 2)
+        # similarity: erin's accepted code renamed by "gina" must match it
+        gina = Client(args.base)
+        gina.request("POST", "/api/auth/signup", body={"username": "smoke_g_" + secrets.token_hex(3), "password": password})
+        copied = "# my solution\nx, y = map(int, input().split())   # read\nprint(x + y)\n"
+        st, sub_, _ = gina.request("POST", "/api/submit", body={"problem": "sum-two", "language": "python",
+                                                               "code": copied, "contest": c_slug})
+        follow(gina, sub_["id"], sub_["seq"])
+        st, sim, _ = admin.request("GET", f"/api/admin/similarity?problem=sum-two&contest={c_slug}&threshold=0.9")
+        check("similarity: a renamed, re-commented copy is found at 100%",
+              st == 200 and sim["pairs"] and sim["pairs"][0]["score"] == 1.0,
+              f"{len(sim['pairs'])} pair(s) over {sim['compared']} students")
+        pair = sim["pairs"][0]
+        st, both, _ = admin.request("GET", f"/api/admin/similarity/pair?a={pair['a']['submission_id']}&b={pair['b']['submission_id']}")
+        check("pair view returns both sources with shared lines", st == 200 and both["a"]["shared_lines"])
+        st, _, _ = erin.request("GET", "/api/admin/similarity?problem=sum-two")
+        check("similarity check is admin-only", st == 403)
+        # an ended contest refuses submissions; an upcoming one hides its problems
+        admin.request("PUT", f"/api/admin/contests/{c_slug}", body={**body, "starts_at": now - 600, "ends_at": now - 1})
+        st, payload, _ = erin.request("POST", "/api/submit", body={"problem": "sum-two", "language": "python",
+                                                                   "code": quick_py, "contest": c_slug})
+        check("after the end: submissions refused", st == 403 and is_error(payload, "contest_not_running"))
+        admin.request("PUT", f"/api/admin/contests/{c_slug}", body={**body, "starts_at": now + 3600, "ends_at": now + 7200})
+        st, detail_up, _ = erin.request("GET", f"/api/contests/{c_slug}")
+        check("before the start: problems are not shown", st == 200 and detail_up["problems"] == [])
+        st, _, _ = admin.request("DELETE", f"/api/admin/contests/{c_slug}", body={"confirm": c_slug})
+        check("delete contest", st == 200)
         demote_admin()
 
     # ------------------------------------------------------------ 13. leak scan
