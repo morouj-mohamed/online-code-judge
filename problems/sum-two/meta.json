@@ -1,6 +1,13 @@
 {
   "slug": "sum-two",
+  "index": "A",
   "title": "Sum of Two Numbers",
+  "difficulty": "Easy",
+  "tags": [
+    "math",
+    "implementation",
+    "overflow"
+  ],
   "time_limit_ms": 1000,
   "memory_limit_mb": 256
 }

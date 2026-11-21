@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}My submissions · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <h1>My submissions</h1>
+      <p class="muted">Only this browser's submissions are listed. Statuses update live.</p>
+    </div>
+    <div class="live-chip" id="stream-state" role="status">
+      <span class="dot" data-state="connecting" aria-hidden="true"></span><span class="js-text">Connecting…</span>
+    </div>
+  </div>
+  <div id="subs-region" aria-busy="true">
+    <div class="card">
+      <div class="stack" style="padding: 16px; gap: 12px" aria-hidden="true">
+        <div class="skeleton skeleton-line" style="height: 20px"></div>
+        <div class="skeleton skeleton-line" style="height: 20px"></div>
+        <div class="skeleton skeleton-line" style="height: 20px"></div>
+        <div class="skeleton skeleton-line" style="height: 20px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-submissions.js') }}"></script>{% endblock %}

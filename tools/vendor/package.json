@@ -1,0 +1,21 @@
+{
+  "name": "ocj-vendor-build",
+  "private": true,
+  "description": "Builds static/vendor/codemirror.js once. Not needed to run the judge.",
+  "scripts": {
+    "build": "esbuild codemirror-entry.js --bundle --format=esm --minify --target=es2020 --legal-comments=eof --outfile=../../static/vendor/codemirror.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0",
+    "codemirror": "6.0.1",
+    "@codemirror/state": "6.5.2",
+    "@codemirror/view": "6.36.4",
+    "@codemirror/commands": "6.8.0",
+    "@codemirror/language": "6.10.8",
+    "@codemirror/autocomplete": "6.18.6",
+    "@codemirror/search": "6.5.10",
+    "@codemirror/lang-cpp": "6.0.2",
+    "@codemirror/lang-python": "6.1.7",
+    "@lezer/highlight": "1.2.1"
+  }
+}

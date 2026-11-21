@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}Online Code Judge{% endblock %}</title>
+  <meta name="description" content="An online judge that compiles your code and runs it on hidden tests inside real operating-system sandboxes.">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0B1210" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F6F6F3" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  {# Runs before the CSS paints, so the page never flashes the wrong theme. #}
+  <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/Inter-Variable.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}" data-page="{{ page }}">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="{% block header_class %}container{% endblock %}">
+      <a class="brand" href="/" aria-label="Online Code Judge, home">
+        <span class="brand-mark"><span data-icon="logo" data-size="18"></span></span>
+        <span class="brand-name">Code Judge <small>v4</small></span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="/" {% if page in ('problems', 'problem') %}aria-current="page"{% endif %}>
+          <span data-icon="grid"></span><span>Problems</span>
+        </a>
+        <a href="/submissions" {% if page in ('submissions', 'result') %}aria-current="page"{% endif %}>
+          <span data-icon="list"></span><span>Submissions</span>
+        </a>
+      </nav>
+      <div class="header-actions">
+        <button class="btn btn-ghost palette-trigger" type="button" aria-label="Open command palette (Control K)">
+          <span data-icon="search"></span><span class="label">Search</span>
+          <span class="kbd-hint"><kbd data-mod-key>Ctrl</kbd> <kbd>K</kbd></span>
+        </button>
+        <button class="btn btn-ghost btn-icon theme-toggle" type="button" aria-label="Switch theme">
+          <span data-icon="sun" data-class="icon-sun" data-size="18"></span>
+          <span data-icon="moon" data-class="icon-moon" data-size="18"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span>Online Code Judge &middot; every run is a real <span class="mono">fork()</span> + <span class="mono">execve()</span> in a sandbox</span>
+      <span>Operating Systems course project</span>
+    </div>
+  </footer>
+
+  {# Screen readers hear verdict changes through this region. #}
+  <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

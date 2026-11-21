@@ -196,21 +196,21 @@ def main():
 
     print(f"Testing {args.base}\n")
     try:
-        status, payload, _ = alice.request("GET", "/")
+        status, payload, _ = alice.request("GET", "/api")
     except urllib.error.URLError as err:
         print(f"Cannot reach the server: {err}. Start it with: python3 app.py")
         return 1
 
     # ------------------------------------------------------------ 1. problems
     print("[1] Problems")
-    check("GET / lists the endpoints", status == 200 and "endpoints" in payload)
+    check("GET /api lists the endpoints", status == 200 and "endpoints" in payload)
     status, payload, headers = alice.request("GET", "/api/problems")
     slugs = [p["slug"] for p in payload["problems"]] if status == 200 else []
     check("GET /api/problems -> 200 with 5 problems", status == 200 and len(slugs) == 5, ", ".join(slugs))
     check("the anonymous session cookie is set",
           any(c.name == "ocj_session" for c in alice.jar), "ocj_session")
     check("problem list has no test data",
-          all(set(p) <= {"slug", "title", "time_limit_ms", "memory_limit_mb", "tests_count",
+          all(set(p) <= {"slug", "index", "title", "difficulty", "tags", "time_limit_ms", "memory_limit_mb", "tests_count",
                          "limits_by_language"} for p in payload["problems"]))
     status, detail, _ = alice.request("GET", "/api/problems/sum-two")
     check("GET /api/problems/sum-two -> statement + sample",
@@ -303,6 +303,14 @@ def main():
     check("a stream opened after the end still gets the final verdict",
           [n for n, _ in late][-2:] == ["submission", "end"] and late[-2][1]["status"] == "Accepted")
 
+    status, sample_run, _ = alice.request("POST", f"/api/submissions/{sub['id']}/sample-run")
+    check("POST /api/submissions/<id>/sample-run -> real output on the PUBLIC sample",
+          status == 200 and sample_run["verdict"] == "Accepted"
+          and sample_run["stdout"].strip() == sample_run["expected_output"].strip()
+          and sample_run["input"] == detail["sample_input"])
+    status, payload, _ = bob.request("POST", f"/api/submissions/{sub['id']}/sample-run")
+    check("another session cannot sample-run it", status == 404)
+
     # ------------------------------------------------------------ 5. leak attempts
     print("[5] Hidden tests never leak")
     leak_ids = []
@@ -390,8 +398,31 @@ def main():
                 wrong.append(f"{item['program']}: {row['status']}")
         check("every stress submission got its expected verdict", not wrong, "; ".join(wrong))
 
-    # ------------------------------------------------------------ 10. leak scan
-    print("[10] Leak scan over every response body")
+    # ------------------------------------------------------------ 10. pages
+    print("[10] HTML pages")
+    for path, marker in (("/", "page-problems.js"), ("/problems/sum-two", "page-problem.js"),
+                         ("/submissions", "page-submissions.js"),
+                         (f"/submissions/{sub['id']}", "page-result.js")):
+        req = urllib.request.Request(args.base + path)
+        with alice.opener.open(req, timeout=30) as resp:
+            html = resp.read().decode()
+            csp = resp.headers.get("Content-Security-Policy", "")
+        alice.bodies.append(html)
+        check(f"GET {path} -> page with its module and a CSP",
+              marker in html and "script-src 'self'" in csp)
+    try:
+        alice.opener.open(urllib.request.Request(args.base + "/problems/no-such-problem"), timeout=30)
+        missing = 200
+    except urllib.error.HTTPError as err:
+        missing = err.code
+    check("unknown problem page -> 404 page", missing == 404)
+    for asset in ("/static/vendor/codemirror.js", "/static/fonts/Inter-Variable.woff2", "/static/css/tokens.css"):
+        with alice.opener.open(urllib.request.Request(args.base + asset), timeout=30) as resp:
+            ok = resp.status == 200 and len(resp.read()) > 1000
+        check(f"GET {asset} is served locally (works offline)", ok)
+
+    # ------------------------------------------------------------ 11. leak scan
+    print("[11] Leak scan over every response body")
     tokens = hidden_tokens()
     seen = set()
     for body in alice.bodies + bob.bodies + carol.bodies:

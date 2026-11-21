@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ problem.index }}. {{ problem.title }} · Online Code Judge{% endblock %}
+{% block body_class %}app-page{% endblock %}
+{% block header_class %}bar{% endblock %}
+{% block content %}
+<div class="workspace" id="workspace" data-slug="{{ problem.slug }}">
+  <section class="pane pane-statement" aria-labelledby="problem-title">
+    <div class="pane-scroll">
+      <header class="problem-head">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/"><span data-icon="arrow-left" data-size="14"></span>All problems</a>
+        </nav>
+        <h1 id="problem-title"><span class="letter">{{ problem.index }}</span>{{ problem.title }}</h1>
+        <div class="row-wrap">
+          <span class="js-status"></span>
+          <span class="difficulty" data-level="{{ {'Easy': 1, 'Medium': 2, 'Hard': 3}.get(problem.difficulty, 1) }}">
+            <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>{{ problem.difficulty }}
+          </span>
+          {% for tag in problem.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
+        </div>
+        <div class="limits-row js-limits" aria-label="Limits"></div>
+      </header>
+      <article class="prose js-statement" aria-busy="true">
+        <div class="skeleton skeleton-line" style="width: 80%"></div>
+        <div class="skeleton skeleton-line" style="width: 64%; margin-top: 12px"></div>
+        <div class="skeleton skeleton-line" style="width: 72%; margin-top: 12px"></div>
+      </article>
+      <section class="samples js-samples" aria-label="Sample"></section>
+    </div>
+  </section>
+
+  <button class="splitter" id="splitter" type="button" role="separator" aria-orientation="vertical"
+          aria-label="Resize statement and editor" aria-controls="workspace" aria-valuemin="25" aria-valuemax="75" aria-valuenow="46"></button>
+
+  <section class="pane pane-editor" aria-label="Code editor">
+    <div class="editor-toolbar">
+      <label class="sr-only" for="language">Language</label>
+      <select class="select" id="language">
+        <option value="cpp">C++17 (g++)</option>
+        <option value="c">C17 (gcc)</option>
+        <option value="python">Python 3</option>
+      </select>
+      <div class="font-size" role="group" aria-label="Editor font size">
+        <button class="btn btn-ghost btn-sm btn-icon js-font-down" type="button" aria-label="Smaller font"><span data-icon="minus" data-size="14"></span></button>
+        <output class="js-font-value" aria-live="polite">14px</output>
+        <button class="btn btn-ghost btn-sm btn-icon js-font-up" type="button" aria-label="Larger font"><span data-icon="plus" data-size="14"></span></button>
+      </div>
+      <span class="spacer"></span>
+      <span class="save-state js-save" aria-live="polite"></span>
+      <button class="btn btn-ghost btn-sm js-reset" type="button"><span data-icon="reset" data-size="14"></span><span>Reset</span></button>
+    </div>
+    <div class="editor-host" id="editor">
+      <div class="editor-loading" aria-hidden="true">
+        <div class="skeleton skeleton-line" style="width: 40%"></div>
+        <div class="skeleton skeleton-line" style="width: 62%"></div>
+        <div class="skeleton skeleton-line" style="width: 54%"></div>
+      </div>
+    </div>
+    <section class="run-panel js-run-panel" aria-label="Sample run result" hidden></section>
+    <div class="action-bar">
+      <div class="hint" aria-hidden="true">
+        <span><kbd data-mod-key>Ctrl</kbd><kbd>Enter</kbd> run</span>
+        <span><kbd data-mod-key>Ctrl</kbd><kbd>Shift</kbd><kbd>Enter</kbd> submit</span>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn js-run" type="button" aria-keyshortcuts="Control+Enter">
+        <span data-icon="play" data-size="14"></span>
+        <span class="btn-label-idle">Run sample</span><span class="btn-label-busy">Running…</span>
+      </button>
+      <button class="btn btn-primary js-submit" type="button" aria-keyshortcuts="Control+Shift+Enter">
+        <span data-icon="send" data-size="14"></span>
+        <span class="btn-label-idle">Submit</span><span class="btn-label-busy">Submitting…</span>
+      </button>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-problem.js') }}"></script>{% endblock %}

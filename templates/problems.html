@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Problems · Online Code Judge{% endblock %}
+{% block content %}
+<section class="hero" aria-labelledby="hero-title">
+  <div class="noise" aria-hidden="true"></div>
+  <div class="container hero-inner">
+    <p class="hero-terminal" aria-hidden="true"><b>$</b> fork() &rarr; setrlimit() &rarr; chroot() &rarr; execve() &rarr; wait4()</p>
+    <h1 id="hero-title">Real code. Real processes. <em>Honest verdicts.</em></h1>
+    <p class="pitch">Write C, C++ or Python in the browser. The judge compiles it and runs it on hidden tests inside a real operating-system sandbox, then reports the time and memory the kernel measured.</p>
+    <div class="hero-meta">
+      <a class="btn btn-primary" href="#problems-title"><span data-icon="arrow-right"></span>Start solving</a>
+      <div class="live-chip" id="judge-status" role="status" aria-live="polite">
+        <span class="dot" data-state="connecting" aria-hidden="true"></span>
+        <span class="js-status-text">Connecting to the judge…</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container page">
+  <div class="page-head">
+    <h2 id="problems-title">Problems</h2>
+    <p class="muted js-count" aria-live="polite"></p>
+  </div>
+
+  <div class="toolbar" role="search">
+    <div class="search">
+      <span data-icon="search"></span>
+      <label class="sr-only" for="problem-search">Search problems</label>
+      <input class="input" id="problem-search" type="search" placeholder="Search by title, letter or tag" autocomplete="off">
+    </div>
+    <fieldset class="segmented" aria-label="Difficulty">
+      <legend class="sr-only">Difficulty</legend>
+      <input type="radio" name="difficulty" id="d-all" value="" checked><label for="d-all">All</label>
+      <input type="radio" name="difficulty" id="d-easy" value="Easy"><label for="d-easy">Easy</label>
+      <input type="radio" name="difficulty" id="d-medium" value="Medium"><label for="d-medium">Medium</label>
+      <input type="radio" name="difficulty" id="d-hard" value="Hard"><label for="d-hard">Hard</label>
+    </fieldset>
+  </div>
+  <div class="tag-filters" id="tag-filters" role="group" aria-label="Filter by tag"></div>
+
+  <div id="problem-region" aria-busy="true">
+    <ul class="problem-list" aria-hidden="true">
+      <li class="skeleton skeleton-row"></li>
+      <li class="skeleton skeleton-row"></li>
+      <li class="skeleton skeleton-row"></li>
+      <li class="skeleton skeleton-row"></li>
+    </ul>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-problems.js') }}"></script>{% endblock %}

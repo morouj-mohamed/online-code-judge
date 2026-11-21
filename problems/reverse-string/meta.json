@@ -1,6 +1,12 @@
 {
   "slug": "reverse-string",
+  "index": "C",
   "title": "Reverse a String",
+  "difficulty": "Easy",
+  "tags": [
+    "strings",
+    "implementation"
+  ],
   "time_limit_ms": 1000,
   "memory_limit_mb": 256
 }

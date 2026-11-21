@@ -1,6 +1,13 @@
 {
   "slug": "fib-mod",
+  "index": "E",
   "title": "Fibonacci Modulo",
+  "difficulty": "Hard",
+  "tags": [
+    "math",
+    "matrix-exponentiation",
+    "divide-and-conquer"
+  ],
   "time_limit_ms": 1000,
   "memory_limit_mb": 256
 }

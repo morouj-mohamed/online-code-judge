@@ -25,6 +25,13 @@ Endpoints (all JSON; errors are {"error": {"code": ..., "message": ...}})
     GET  /api/stream                   Server-Sent Events (?submission=<id>&since=<seq>&types=a,b)
     GET  /api/inspector/state          workers, queue, isolation level, last rlimits
     POST /api/inspector/stress         fires 20 submissions at the pool
+    POST /api/submissions/<id>/sample-run   re-run one of YOUR submissions on the
+                                       public sample and get its real output (for a diff)
+
+Pages (Phase 4, HTML rendered from templates/, behaviour in static/js/):
+
+    /                       problem list        /problems/<slug>   statement + editor
+    /submissions            your submissions    /submissions/<id>  live result
 
 Hidden tests are never sent to a client: problem endpoints only expose the
 sample, and every verdict message is rewritten by public_message() so that it
@@ -43,7 +50,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, Response, g, jsonify, request, stream_with_context
+from flask import Flask, Response, abort, g, jsonify, render_template, request, stream_with_context
 from werkzeug.exceptions import HTTPException
 
 import config
@@ -230,7 +237,13 @@ def load_public_problem(slug, detail=False):
     for language in config.LANGUAGES:
         eff = config.effective_limits(language, problem["time_limit_ms"], problem["memory_limit_mb"])
         limits[language] = {"time_ms": eff["time_ms"], "memory_mb": eff["memory_kb"] // 1024}
-    data = {"slug": slug, "title": problem["title"], "time_limit_ms": problem["time_limit_ms"],
+    with open(os.path.join(_problem_dir(slug), "meta.json"), encoding="utf-8") as f:
+        meta = json.load(f)
+    tags = meta.get("tags", [])
+    data = {"slug": slug, "index": str(meta.get("index", "")), "title": problem["title"],
+            "difficulty": meta.get("difficulty", "Easy"),
+            "tags": [t for t in tags if isinstance(t, str)] if isinstance(tags, list) else [],
+            "time_limit_ms": problem["time_limit_ms"],
             "memory_limit_mb": problem["memory_limit_mb"], "tests_count": len(problem["tests"]),
             "limits_by_language": limits}
     if detail:
@@ -377,7 +390,13 @@ class JudgeService:
             self.sample_slots.put(slot)
 
         test = result["tests"][0] if result["tests"] else None
-        # The sample is public, so the full message (expected vs got) is fine here.
+        with open(os.path.join(folder, "sample.in"), encoding="utf-8") as f:
+            sample_input = f.read()
+        with open(os.path.join(folder, "sample.out"), encoding="utf-8") as f:
+            sample_output = f.read()
+        # The sample is public, so the full message (expected vs got) and the
+        # program's real output are fine here. This is the ONLY place where
+        # program output leaves the server, and only for the public sample.
         message = re.sub(r"^test 1: ", "", result["message"])
         if result["verdict"] == config.ACCEPTED:
             message = "sample passed"
@@ -393,6 +412,9 @@ class JudgeService:
                 "memory_kb": test["memory_kb"], "memory_source": test["memory_source"],
                 "exit_code": test["exit_code"], "signal": test["signal"], "stderr": test["stderr"],
             },
+            "input": sample_input,
+            "expected_output": sample_output,
+            "stdout": test["stdout"] if test else "",
             "isolation": result["isolation"],
         }
 
@@ -521,6 +543,16 @@ def create_app(service=None):
                                 max_age=config.SESSION_COOKIE_MAX_AGE_S, httponly=True,
                                 samesite="Lax", secure=config.SESSION_COOKIE_SECURE)
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "same-origin"
+        if response.mimetype == "text/html":
+            # Content Security Policy: the pages may only load scripts, fonts and
+            # data from this server. Even if an attacker managed to inject HTML,
+            # the browser would refuse to run any script that is not our own file.
+            # ('unsafe-inline' for styles only: the code editor sets styles at runtime.)
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
+                "base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         if request.path.startswith("/api/") and "Cache-Control" not in response.headers:
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -533,6 +565,9 @@ def create_app(service=None):
 
     @app.errorhandler(HTTPException)
     def http_error(err):
+        if err.code == 404 and not request.path.startswith("/api") \
+                and not request.path.startswith("/static"):
+            return render_template("not_found.html", page="not-found"), 404
         codes = {400: "bad_request", 404: "not_found", 405: "method_not_allowed",
                  413: "request_too_large", 415: "unsupported_media_type"}
         message = err.description
@@ -596,12 +631,36 @@ def create_app(service=None):
         return row
 
     # ---------------------------------------------------------------- routes
+    # ---------------------------------------------------------------- pages
+    # The HTML is a thin shell; each page's ES module (static/js/page-*.js)
+    # fetches the data from the JSON API below and keeps it live with SSE.
     @app.get("/")
-    def index():
+    def page_problems():
+        return render_template("problems.html", page="problems")
+
+    @app.get("/problems/<slug>")
+    def page_problem(slug):
+        try:
+            problem = load_public_problem(slug)
+        except ApiError:
+            abort(404)
+        return render_template("problem.html", page="problem", problem=problem)
+
+    @app.get("/submissions")
+    def page_submissions():
+        return render_template("submissions.html", page="submissions")
+
+    @app.get("/submissions/<int:submission_id>")
+    def page_result(submission_id):
+        return render_template("result.html", page="result", submission_id=submission_id)
+
+    @app.get("/api")
+    def api_index():
         return jsonify({"name": "Online Code Judge API", "endpoints": [
             "GET /api/problems", "GET /api/problems/<slug>", "POST /api/submit",
             "POST /api/run-sample", "GET /api/submissions", "GET /api/submissions/<id>",
-            "GET /api/stream", "GET /api/inspector/state", "POST /api/inspector/stress"]})
+            "POST /api/submissions/<id>/sample-run", "GET /api/stream",
+            "GET /api/inspector/state", "POST /api/inspector/stress"]})
 
     @app.get("/api/problems")
     def problems():
@@ -658,6 +717,20 @@ def create_app(service=None):
                                "details": details})
             data["events"] = events
         return jsonify(data)
+
+    @app.post("/api/submissions/<int:submission_id>/sample-run")
+    def submission_sample_run(submission_id):
+        """
+        Run one of this session's submissions on the PUBLIC sample only, so the
+        Result page can show a real side-by-side diff after a Wrong Answer.
+        The hidden tests are not involved at all.
+        """
+        row = own_submission(submission_id)
+        rate_limit("run_sample")
+        try:
+            return jsonify(service.run_sample(row["problem_slug"], row["language"], row["source"]))
+        except sandbox.SandboxError as exc:
+            raise ApiError(500, "judge_error", f"the judge failed: {exc}") from None
 
     @app.get("/api/stream")
     def stream():

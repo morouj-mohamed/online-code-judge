@@ -72,6 +72,17 @@ assert prev_prime(10 ** 12) == 999999999989
 # ----------------------------------------------------------------------------
 # Writing helpers
 # ----------------------------------------------------------------------------
+# Shown by the web UI (Phase 4): the letter, a difficulty and topic tags.
+DISPLAY = {
+    "sum-two":        {"index": "A", "difficulty": "Easy",   "tags": ["math", "implementation", "overflow"]},
+    "max-array":      {"index": "B", "difficulty": "Easy",   "tags": ["arrays", "implementation", "fast-io"]},
+    "reverse-string": {"index": "C", "difficulty": "Easy",   "tags": ["strings", "implementation"]},
+    "prime-check":    {"index": "D", "difficulty": "Medium", "tags": ["math", "number-theory"]},
+    "fib-mod":        {"index": "E", "difficulty": "Hard",
+                       "tags": ["math", "matrix-exponentiation", "divide-and-conquer"]},
+}
+
+
 def write_problem(slug, title, statement, tests, time_limit_ms=1000, memory_limit_mb=256):
     """tests is a list of (input_text, output_text)."""
     folder = os.path.join(PROBLEMS, slug)
@@ -81,8 +92,10 @@ def write_problem(slug, title, statement, tests, time_limit_ms=1000, memory_limi
         os.remove(os.path.join(tests_dir, name))
 
     with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump({"slug": slug, "title": title, "time_limit_ms": time_limit_ms,
-                   "memory_limit_mb": memory_limit_mb}, f, indent=2)
+        display = DISPLAY.get(slug, {})
+        json.dump({"slug": slug, "index": display.get("index", ""), "title": title,
+                   "difficulty": display.get("difficulty", "Easy"), "tags": display.get("tags", []),
+                   "time_limit_ms": time_limit_ms, "memory_limit_mb": memory_limit_mb}, f, indent=2)
         f.write("\n")
     with open(os.path.join(folder, "statement.md"), "w", encoding="utf-8") as f:
         f.write(statement.strip() + "\n")

@@ -57,6 +57,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning,
 SETUP_TIMEOUT_S = 5.0
 # How much of the program's stderr we keep for messages and heuristics.
 STDERR_HEAD_BYTES = 2000
+# How much of the program's stdout we keep (used only for the public sample diff).
+STDOUT_HEAD_BYTES = 16 * 1024
 # For the first moments after exec() we poll without sleeping so that even a
 # program that lives for half a millisecond is sampled a few times.
 SPIN_SECONDS = 0.02
@@ -1181,6 +1183,11 @@ class Sandbox:
 
         with open(stderr_path, "rb") as f:
             stderr_head = f.read(STDERR_HEAD_BYTES)
+        # The first bytes of the program's output. Only the web API's "run on the
+        # PUBLIC sample" feature shows it (to draw a diff); for hidden tests it is
+        # never stored or sent anywhere.
+        with open(stdout_path, "rb") as f:
+            stdout_head = f.read(STDOUT_HEAD_BYTES)
         mem_kb, mem_source = _measured_memory(result, floor_kb)
         verdict, message = classify_run(result, self.eff, as_limit_kb, mem_kb, stderr_head)
         if verdict is None:
@@ -1203,6 +1210,7 @@ class Sandbox:
             "exit_code": result["exit_code"],
             "signal": signal.Signals(result["signal"]).name if result["signal"] else None,
             "stderr": stderr_head.decode("utf-8", "replace")[:500],
+            "stdout": stdout_head.decode("utf-8", "replace"),
             "pgid": result["pgid"],
             "stray_processes_killed": result["stray_killed"],
             "orphans_reaped": result["orphans_reaped"],

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Submission #{{ submission_id }} · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="result" data-id="{{ submission_id }}">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <p class="eyebrow">Submission <span class="mono">#{{ submission_id }}</span></p>
+      <h1 class="js-title">Loading result…</h1>
+      <p class="muted js-subtitle"></p>
+    </div>
+    <div class="row-wrap js-actions"></div>
+  </div>
+
+  <div class="result-grid js-body" aria-busy="true">
+    <div class="skeleton" style="height: 128px; border-radius: 16px"></div>
+    <div class="metrics">
+      <div class="skeleton" style="height: 92px; border-radius: 12px"></div>
+      <div class="skeleton" style="height: 92px; border-radius: 12px"></div>
+      <div class="skeleton" style="height: 92px; border-radius: 12px"></div>
+      <div class="skeleton" style="height: 92px; border-radius: 12px"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-result.js') }}"></script>{% endblock %}

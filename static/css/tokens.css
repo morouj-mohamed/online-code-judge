@@ -1,0 +1,232 @@
+/*
+ * tokens.css - the design system's raw values. Every color, size and duration
+ * used anywhere comes from a variable defined here, so the two themes are just
+ * two sets of values for the same names.
+ *
+ * Theme selection: <html data-theme="dark|light"> is set before first paint by
+ * static/js/theme-init.js (stored choice, else the system preference).
+ *
+ * Contrast: every text/background pair below was checked for WCAG AA
+ * (4.5:1 for body text, 3:1 for large text and UI outlines).
+ */
+
+/* ---------------------------------------------------------------- fonts -- */
+/* Self-hosted variable fonts (SIL Open Font License, see static/fonts/). */
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/Inter-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/JetBrainsMono-Variable.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ------------------------------------------------------------ type --- */
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --text-xs: 0.75rem;    /* 12 */
+  --text-sm: 0.8125rem;  /* 13 */
+  --text-md: 0.9375rem;  /* 15 */
+  --text-lg: 1.125rem;   /* 18 */
+  --text-xl: 1.5rem;     /* 24 */
+  --text-2xl: 2rem;      /* 32 */
+  --text-3xl: clamp(2rem, 1.2rem + 3.2vw, 3.25rem);   /* hero: 32 -> 52 */
+
+  --tracking-tight: -0.022em;
+  --tracking-tighter: -0.035em;
+  --tracking-caps: 0.08em;
+
+  /* ------------------------------------------------- 8px spacing grid --- */
+  --s-0: 2px;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 40px;
+  --s-8: 48px;
+  --s-9: 64px;
+  --s-10: 96px;
+
+  /* ---------------------------------------------------------- shapes --- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+  --hairline: 1px;
+
+  --header-h: 64px;
+  --content-max: 1200px;
+  --touch: 44px;          /* minimum touch target */
+  --control-h: 40px;      /* buttons/inputs on mouse devices */
+
+  /* ---------------------------------------------------------- motion --- */
+  --dur-1: 150ms;
+  --dur-2: 200ms;
+  --dur-3: 250ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  --z-header: 20;
+  --z-actionbar: 30;
+  --z-toast: 60;
+  --z-dialog: 50;
+}
+
+/* Users who ask the OS for less motion get instant state changes instead. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+  }
+}
+
+@media (pointer: coarse) {
+  :root { --control-h: var(--touch); }
+}
+
+/* =========================================================== DARK ====== */
+/* Deep ink green-black with layered surfaces: each layer is a little lighter
+   and a little greener, so depth reads without heavy shadows. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0B1210;
+  --bg-elev: #0E1714;
+  --surface-1: #111B18;
+  --surface-2: #15221E;
+  --surface-3: #1B2B26;
+  --surface-sunken: #08100D;
+  --overlay: rgba(4, 9, 7, 0.72);
+
+  --border: rgba(214, 255, 238, 0.08);
+  --border-strong: rgba(214, 255, 238, 0.15);
+  --border-focus: #5FD0AA;
+
+  --text: #E4EEE9;          /* 15.6:1 on --bg */
+  --text-muted: #A3B6AE;    /*  8.9:1 */
+  --text-subtle: #7F938B;   /*  5.6:1 */
+  --text-on-accent: #04140E;
+
+  --accent: #3FB58F;        /*  7.6:1 on --bg */
+  --accent-hover: #55C7A1;
+  --accent-strong: #6FDDB6;
+  --accent-soft: rgba(63, 181, 143, 0.14);
+  --accent-softer: rgba(63, 181, 143, 0.07);
+  --accent-glow: rgba(63, 181, 143, 0.45);
+
+  /* verdict colors (always paired with an icon and a label) */
+  --v-ok: #4CC79D;
+  --v-wa: #FF8A8F;
+  --v-tle: #F0BE5A;
+  --v-mle: #BBA6FF;
+  --v-re: #FFA36B;
+  --v-ce: #93B8E6;
+  --v-pending: #A3B6AE;
+  --v-running: #6CCDF0;
+  --v-error: #FF8A8F;
+
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 2px 4px rgba(0, 0, 0, 0.35),
+              0 8px 24px -8px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 32px -8px rgba(0, 0, 0, 0.6),
+              0 32px 64px -24px rgba(0, 0, 0, 0.7);
+
+  --grid-line: rgba(140, 230, 200, 0.06);
+  --noise-opacity: 0.05;
+  --skeleton-a: #15221E;
+  --skeleton-b: #1E302A;
+  --selection: rgba(63, 181, 143, 0.32);
+
+  /* code editor */
+  --code-bg: #0A110F;
+  --code-gutter: #0D1513;
+  --code-gutter-text: #7C8F87;   /* 5.0:1 on the gutter */
+  --code-active-line: rgba(63, 181, 143, 0.06);
+  --code-cursor: #6FDDB6;
+  --code-keyword: #6FDDB6;
+  --code-type: #93B8E6;
+  --code-string: #E9C27A;
+  --code-number: #F2A97E;
+  --code-comment: #74897F;      /* 5.1:1 on the editor background */
+  --code-function: #C4B5FF;
+  --code-operator: #A3B6AE;
+  --code-meta: #FF9EB0;
+}
+
+/* ========================================================== LIGHT ====== */
+/* Warm off-white with white cards; the accent darkens so it still reads. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #F6F6F3;
+  --bg-elev: #FBFBF9;
+  --surface-1: #FFFFFF;
+  --surface-2: #FFFFFF;
+  --surface-3: #F0F1EC;
+  --surface-sunken: #EEEFEA;
+  --overlay: rgba(20, 28, 25, 0.38);
+
+  --border: rgba(22, 40, 33, 0.10);
+  --border-strong: rgba(22, 40, 33, 0.18);
+  --border-focus: #1F6F5C;
+
+  --text: #131D19;          /* 16.1:1 on --bg */
+  --text-muted: #4A5852;    /*  7.2:1 */
+  --text-subtle: #5F6D67;   /*  5.3:1 */
+  --text-on-accent: #FFFFFF;
+
+  --accent: #1F6F5C;        /*  5.9:1 on --bg, 6.3:1 on white */
+  --accent-hover: #195D4D;
+  --accent-strong: #134A3D;
+  --accent-soft: rgba(31, 111, 92, 0.10);
+  --accent-softer: rgba(31, 111, 92, 0.05);
+  --accent-glow: rgba(31, 111, 92, 0.30);
+
+  --v-ok: #1F6F5C;
+  --v-wa: #B42330;
+  --v-tle: #855500;
+  --v-mle: #6541C0;
+  --v-re: #A84A0C;
+  --v-ce: #2C5A8C;
+  --v-pending: #56645E;
+  --v-running: #0B6788;
+  --v-error: #B42330;
+
+  --shadow-1: 0 1px 2px rgba(20, 35, 29, 0.06);
+  --shadow-2: 0 1px 2px rgba(20, 35, 29, 0.05), 0 8px 24px -10px rgba(20, 35, 29, 0.16);
+  --shadow-3: 0 2px 6px rgba(20, 35, 29, 0.06), 0 24px 56px -20px rgba(20, 35, 29, 0.28);
+
+  --grid-line: rgba(31, 111, 92, 0.07);
+  --noise-opacity: 0.035;
+  --skeleton-a: #ECEDE8;
+  --skeleton-b: #F6F7F3;
+  --selection: rgba(31, 111, 92, 0.18);
+
+  --code-bg: #FFFFFF;
+  --code-gutter: #FAFAF7;
+  --code-gutter-text: #66726C;   /* 4.8:1 on the gutter */
+  --code-active-line: rgba(31, 111, 92, 0.05);
+  --code-cursor: #1F6F5C;
+  --code-keyword: #1F6F5C;
+  --code-type: #2C5A8C;
+  --code-string: #8A4B00;
+  --code-number: #A4400E;
+  --code-comment: #626E69;      /* 5.2:1 on white */
+  --code-function: #5B3BB0;
+  --code-operator: #4A5852;
+  --code-meta: #A3245B;
+}

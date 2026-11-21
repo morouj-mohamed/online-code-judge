@@ -1,6 +1,13 @@
 {
   "slug": "max-array",
+  "index": "B",
   "title": "Maximum of Array",
+  "difficulty": "Easy",
+  "tags": [
+    "arrays",
+    "implementation",
+    "fast-io"
+  ],
   "time_limit_ms": 1000,
   "memory_limit_mb": 256
 }
