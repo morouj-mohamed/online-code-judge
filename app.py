@@ -62,6 +62,7 @@ import time
 
 from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, stream_with_context
 from werkzeug.exceptions import HTTPException
+from werkzeug.serving import WSGIRequestHandler
 
 import config
 from judge import auth
@@ -1573,6 +1574,31 @@ def create_app(service=None):
 # ============================================================================
 # Entry point
 # ============================================================================
+class FriendlyRequestHandler(WSGIRequestHandler):
+    """
+    The development server speaks plain HTTP. When a browser insists on HTTPS
+    (Edge/Chrome "automatic HTTPS", private windows), it sends an encrypted TLS
+    "hello" that starts with the bytes 0x16 0x03, and the server would print
+    pages of binary garbage. Print one clear line instead.
+    """
+    _warned_at = 0.0
+
+    def log_error(self, format, *args):
+        if self.raw_requestline[:2] == b"\x16\x03":
+            return                                   # reported once in log_request below
+        super().log_error(format, *args)
+
+    def log_request(self, code="-", size="-"):
+        if self.raw_requestline[:2] == b"\x16\x03":
+            now = time.time()
+            if now - FriendlyRequestHandler._warned_at > 10:
+                FriendlyRequestHandler._warned_at = now
+                print(f"  ! A browser tried HTTPS on this plain-HTTP server. Open http://127.0.0.1:{config.PORT} "
+                      "(with http://, not https://) or turn off 'automatic HTTPS' in the browser.", flush=True)
+            return
+        super().log_request(code, size)
+
+
 def _exit_on_sigterm(signum, frame):
     # `docker stop` sends SIGTERM. Python's default would kill us without
     # running `finally` blocks; turning it into SystemExit lets the server loop
@@ -1595,7 +1621,8 @@ def main():
         # threaded=True: every request (and every open SSE stream) gets its own
         # thread. use_reloader=False: the reloader would start a SECOND process
         # with a second worker pool.
-        app.run(host=config.HOST, port=config.PORT, threaded=True, use_reloader=False, debug=False)
+        app.run(host=config.HOST, port=config.PORT, threaded=True, use_reloader=False, debug=False,
+                request_handler=FriendlyRequestHandler)
     except KeyboardInterrupt:
         pass
     finally:
