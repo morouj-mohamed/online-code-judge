@@ -27,11 +27,18 @@ Endpoints (all JSON; errors are {"error": {"code": ..., "message": ...}})
     POST /api/inspector/stress         fires 20 submissions at the pool
     POST /api/submissions/<id>/sample-run   re-run one of YOUR submissions on the
                                        public sample and get its real output (for a diff)
+    POST /api/auth/signup | login | logout, GET /api/auth/me      accounts
+    /api/admin/...                     problem management (admins only)
+
+Who owns a submission: the account it was made with, or, for a visitor who
+is not logged in, the anonymous browser session. Logging in moves the
+session's anonymous submissions to the account. Admins may open any one.
 
 Pages (Phase 4, HTML rendered from templates/, behaviour in static/js/):
 
     /                       problem list        /problems/<slug>   statement + editor
     /submissions            your submissions    /submissions/<id>  live result
+    /login  /signup         accounts            /admin             problem management
 
 Hidden tests are never sent to a client: problem endpoints only expose the
 sample, and every verdict message is rewritten by public_message() so that it
@@ -46,16 +53,19 @@ import os
 import re
 import secrets
 import signal
+import sqlite3
 import sys
 import threading
 import time
 
-from flask import Flask, Response, abort, g, jsonify, render_template, request, stream_with_context
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, stream_with_context
 from werkzeug.exceptions import HTTPException
 
 import config
+from judge import auth
 from judge import db as dbmod
 from judge import events as evmod
+from judge import problemstore
 from judge import queue as jqueue
 from judge import sandbox
 from judge import worker as wmod
@@ -225,9 +235,14 @@ def _problem_dir(slug):
     return os.path.join(config.PROBLEMS_DIR, slug)
 
 
-def load_public_problem(slug, detail=False):
-    """Problem info for clients. Raises ApiError(404) for an unknown slug."""
+def load_public_problem(slug, detail=False, include_hidden=False):
+    """
+    Problem info for clients. Raises ApiError(404) for an unknown slug, and
+    for a hidden (unpublished) problem unless include_hidden (admins).
+    """
     if not isinstance(slug, str) or not SLUG_RE.match(slug):
+        raise ApiError(404, "problem_not_found", f"unknown problem: {slug!r}")
+    if not include_hidden and problemstore.is_hidden(slug):
         raise ApiError(404, "problem_not_found", f"unknown problem: {slug!r}")
     try:
         problem = sandbox.load_problem(slug)
@@ -246,6 +261,8 @@ def load_public_problem(slug, detail=False):
             "time_limit_ms": problem["time_limit_ms"],
             "memory_limit_mb": problem["memory_limit_mb"], "tests_count": len(problem["tests"]),
             "limits_by_language": limits}
+    if include_hidden:
+        data["hidden"] = bool(meta.get("hidden", False))
     if detail:
         folder = _problem_dir(slug)
         with open(os.path.join(folder, "statement.md"), encoding="utf-8") as f:
@@ -257,10 +274,41 @@ def load_public_problem(slug, detail=False):
     return data
 
 
-def list_problem_slugs():
-    return sorted(name for name in os.listdir(config.PROBLEMS_DIR)
-                  if SLUG_RE.match(name)
-                  and os.path.isfile(os.path.join(config.PROBLEMS_DIR, name, "meta.json")))
+def list_problem_slugs(include_hidden=False):
+    return [slug for slug in problemstore.list_slugs()
+            if include_hidden or not problemstore.is_hidden(slug)]
+
+
+# ============================================================================
+# Who is asking: the anonymous session and, if logged in, the account
+# ============================================================================
+class Viewer:
+    """The browser making a request: its anonymous session id and maybe a user."""
+
+    def __init__(self, session_id, user=None):
+        self.session_id = session_id
+        self.user = user                      # {"id", "username", "is_admin"} or None
+
+    @property
+    def user_id(self):
+        return self.user["id"] if self.user else None
+
+    @property
+    def is_admin(self):
+        return bool(self.user and self.user["is_admin"])
+
+    def owns(self, owner, allow_admin=False):
+        """owner = (session_id, user_id) of a submission."""
+        if owner is None:
+            return False
+        if allow_admin and self.is_admin:
+            return True
+        owner_session, owner_user = owner
+        if owner_user is not None:
+            return self.user_id == owner_user
+        # Anonymous submission: only the same browser session, and only while
+        # it is not logged in to an account (after login it was moved over).
+        return self.user is None and owner_session == self.session_id
 
 
 # ============================================================================
@@ -338,32 +386,65 @@ class JudgeService:
 
     # ------------------------------------------------------------ ownership
     def owner_of(self, submission_id):
-        """Session id of a submission. Cached: the stream asks for every event."""
+        """(session_id, user_id) of a submission. Cached: the stream asks for every event."""
         with self._lock:
             if submission_id in self._owners:
                 self._owners.move_to_end(submission_id)
                 return self._owners[submission_id]
-        owner = self.db.get_session_of(submission_id)
+        owner = self.db.get_owner(submission_id)
         with self._lock:
             self._owners[submission_id] = owner
             while len(self._owners) > 20000:
                 self._owners.popitem(last=False)
         return owner
 
+    def forget_owners(self):
+        """Ownership changed (a login claimed anonymous submissions): drop the cache."""
+        with self._lock:
+            self._owners.clear()
+
     # ------------------------------------------------------------ actions
-    def submit(self, session_id, problem, language, code):
+    def submit(self, viewer, problem, language, code):
         seq = self.broker.stats()["published"]
         try:
             sid = self.pool.submit(problem, language, code, block=True,
-                                   timeout=config.SUBMIT_QUEUE_WAIT_S, session_id=session_id)
+                                   timeout=config.SUBMIT_QUEUE_WAIT_S,
+                                   session_id=viewer.session_id, user_id=viewer.user_id)
         except jqueue.Full:
             raise ApiError(503, "queue_full", "the judge queue is full, try again in a moment",
                            headers={"Retry-After": "5"}) from None
         except wmod.PoolClosed:
             raise ApiError(503, "shutting_down", "the judge is shutting down") from None
         with self._lock:
-            self._owners[sid] = session_id
+            self._owners[sid] = (viewer.session_id, viewer.user_id)
         return sid, seq
+
+    def _take_slot(self):
+        try:
+            return self.sample_slots.get(timeout=config.SAMPLE_WAIT_S)
+        except (jqueue.Empty, jqueue.Closed):
+            raise ApiError(503, "sample_runners_busy", "all sample runners are busy, try again",
+                           headers={"Retry-After": "2"}) from None
+
+    def validate_solution(self, problem_slug, language, code):
+        """
+        Admin check: run a reference solution on ALL hidden tests (stops at the
+        first failure). Admins see the full, unredacted messages.
+        """
+        slot = self._take_slot()
+        try:
+            result = sandbox.judge_submission(problem_slug, language, code,
+                                              on_event=lambda e: None, uid_slot=slot)
+        finally:
+            self.sample_slots.put(slot)
+        return {
+            "verdict": result["verdict"], "message": result["message"],
+            "failed_test": result["failed_test"], "total_tests": result["total_tests"],
+            "time_ms": result["time_ms"], "memory_kb": result["memory_kb"],
+            "compile_output": (result["compile"] or {}).get("message", ""),
+            "tests": [{"test": t["test"], "verdict": t["verdict"], "time_ms": t["time_ms"],
+                       "memory_kb": t["memory_kb"], "message": t["message"]} for t in result["tests"]],
+        }
 
     def run_sample(self, problem_slug, language, code):
         """Compile and run on the public sample, synchronously, outside the queue."""
@@ -372,11 +453,7 @@ class JudgeService:
         problem = dict(problem)
         problem["tests"] = [{"index": 1, "input": os.path.join(folder, "sample.in"),
                              "expected": os.path.join(folder, "sample.out")}]
-        try:
-            slot = self.sample_slots.get(timeout=config.SAMPLE_WAIT_S)
-        except (jqueue.Empty, jqueue.Closed):
-            raise ApiError(503, "sample_runners_busy", "all sample runners are busy, try again",
-                           headers={"Retry-After": "2"}) from None
+        slot = self._take_slot()
         try:
             def on_event(event):
                 details = dict(event["details"])
@@ -418,7 +495,7 @@ class JudgeService:
             "isolation": result["isolation"],
         }
 
-    def stress(self, session_id):
+    def stress(self, viewer):
         """Queue the 20 mixed programs of tools/stress.py without waiting."""
         stress_mod = importlib.import_module("tools.stress")
         ids, rejected = [], 0
@@ -427,12 +504,13 @@ class JudgeService:
             with open(path, encoding="utf-8") as f:
                 code = f.read()
             try:
-                sid = self.pool.submit(problem, language, code, block=False, session_id=session_id)
+                sid = self.pool.submit(problem, language, code, block=False,
+                                       session_id=viewer.session_id, user_id=viewer.user_id)
             except (jqueue.Full, wmod.PoolClosed):
                 rejected += 1
                 continue
             with self._lock:
-                self._owners[sid] = session_id
+                self._owners[sid] = (viewer.session_id, viewer.user_id)
             ids.append({"id": sid, "program": label, "problem": problem, "language": language,
                         "expected": expected, "expected_failed_test": failed})
         return {"submitted": len(ids), "rejected": rejected, "submissions": ids}
@@ -482,19 +560,19 @@ def sse_format(event_name, data, event_id=None):
     return "\n".join(lines) + "\n\n"
 
 
-def translate_event(service, event, session_id):
+def translate_event(service, event, viewer, allow_admin=False):
     """
-    Turn a broker event into (sse_event_name, data), or None if this session
-    must not see it. Submission and judge events go only to the session that
-    owns the submission; worker and queue events are about the machine and go
-    to everybody (they contain no code and no test data).
+    Turn a broker event into (sse_event_name, data), or None if this viewer
+    must not see it. Submission and judge events go only to the owner of the
+    submission (or an admin watching that one submission); worker and queue
+    events are about the machine and go to everybody (no code, no test data).
     """
     kind = event["type"]
     sid = event["submission_id"]
     data = event["data"]
     if kind in ("worker", "queue"):
         return kind, data
-    if sid is None or service.owner_of(sid) != session_id:
+    if sid is None or not viewer.owns(service.owner_of(sid), allow_admin=allow_admin):
         return None
     if kind == "submission":
         status = data.get("status")
@@ -535,6 +613,36 @@ def create_app(service=None):
         g.new_session = not SESSION_RE.match(sid)
         # 18 random bytes from the OS (secrets uses os.urandom) -> 24 URL-safe characters.
         g.session_id = secrets.token_urlsafe(18) if g.new_session else sid
+        # Logged in? The cookie holds a random token; the database knows its hash.
+        token = request.cookies.get(config.AUTH_COOKIE, "")
+        user = service.db.get_auth_user(auth.token_hash(token)) if 20 <= len(token) <= 100 else None
+        g.viewer = Viewer(g.session_id, user)
+        g.clear_auth_cookie = bool(token) and user is None
+
+    @app.before_request
+    def check_origin():
+        """
+        Cross-site request forgery (CSRF) protection. A page on another site
+        could make the browser send a POST here with our cookies attached.
+        Browsers add an Origin header to such requests, so any state-changing
+        request whose Origin is not this very server is refused.
+        """
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        origin = request.headers.get("Origin")
+        if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+            raise ApiError(403, "bad_origin", "cross-site requests are not allowed")
+        return None
+
+    @app.before_request
+    def upload_limit():
+        # Test ZIPs are bigger than any other request: raise the limit for that one URL.
+        if request.path.startswith("/api/admin/") and request.path.endswith("/tests"):
+            request.max_content_length = problemstore.MAX_ZIP_BYTES + 1024 * 1024
+
+    @app.context_processor
+    def template_globals():
+        return {"viewer": g.get("viewer"), "allow_signup": config.ALLOW_SIGNUP}
 
     @app.after_request
     def finish_response(response):
@@ -542,6 +650,11 @@ def create_app(service=None):
             response.set_cookie(config.SESSION_COOKIE, g.session_id,
                                 max_age=config.SESSION_COOKIE_MAX_AGE_S, httponly=True,
                                 samesite="Lax", secure=config.SESSION_COOKIE_SECURE)
+        if g.get("set_auth_token"):
+            response.set_cookie(config.AUTH_COOKIE, g.set_auth_token, max_age=config.AUTH_TTL_S,
+                                httponly=True, samesite="Lax", secure=config.SESSION_COOKIE_SECURE)
+        elif g.get("clear_auth_cookie"):
+            response.delete_cookie(config.AUTH_COOKIE, samesite="Lax")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         if response.mimetype == "text/html":
@@ -585,8 +698,9 @@ def create_app(service=None):
     # ---------------------------------------------------------------- helpers
     def rate_limit(bucket):
         limits = config.RATE_LIMITS[bucket]
+        who = f"user:{g.viewer.user_id}" if g.viewer.user else f"session:{g.session_id}"
         wait = service.limiter.check(bucket, [
-            (f"session:{g.session_id}", limits["session"]),
+            (who, limits["session"]),
             (f"ip:{request.remote_addr}", limits["ip"]),
         ])
         if wait:
@@ -617,16 +731,44 @@ def create_app(service=None):
         if "\x00" in code:
             raise ApiError(400, "invalid_code", "the code contains a NUL byte")
         try:
-            load_public_problem(problem)
+            load_public_problem(problem, include_hidden=g.viewer.is_admin)
         except ApiError:
             raise ApiError(400, "unknown_problem", f"unknown problem: {problem!r}") from None
         return problem, language, code
 
-    def own_submission(submission_id):
+    def read_json():
+        if not request.is_json:
+            raise ApiError(415, "unsupported_media_type", "send JSON with Content-Type: application/json")
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            raise ApiError(400, "invalid_json", "the body must be a JSON object")
+        return body
+
+    def require_admin():
+        if not g.viewer.user:
+            raise ApiError(401, "login_required", "log in first")
+        if not g.viewer.is_admin:
+            raise ApiError(403, "admin_only", "only admins can do this")
+
+    def log_in(user_id):
+        """Start a login session for this browser and give it its anonymous work."""
+        token, token_hash = auth.new_token()
+        service.db.create_auth_session(token_hash, user_id, config.AUTH_TTL_S)
+        service.db.touch_login(user_id)
+        moved = service.db.claim_submissions(g.session_id, user_id)
+        service.forget_owners()
+        g.set_auth_token = token
+        return moved
+
+    def public_user(user):
+        return None if not user else {"username": user["username"], "is_admin": bool(user["is_admin"])}
+
+    def own_submission(submission_id, allow_admin=True):
         row = service.db.get_submission(submission_id)
         # Somebody else's submission answers exactly like a missing one, so ids
         # of other sessions cannot even be probed.
-        if row is None or row["session_id"] != g.session_id:
+        owner = (row["session_id"], row["user_id"]) if row else None
+        if not g.viewer.owns(owner, allow_admin=allow_admin):
             raise ApiError(404, "submission_not_found", f"no submission {submission_id}")
         return row
 
@@ -641,10 +783,41 @@ def create_app(service=None):
     @app.get("/problems/<slug>")
     def page_problem(slug):
         try:
-            problem = load_public_problem(slug)
+            problem = load_public_problem(slug, include_hidden=g.viewer.is_admin)
         except ApiError:
             abort(404)
         return render_template("problem.html", page="problem", problem=problem)
+
+    @app.get("/login")
+    def page_login():
+        if g.viewer.user:
+            return redirect("/")
+        return render_template("auth.html", page="login", mode="login")
+
+    @app.get("/signup")
+    def page_signup():
+        if g.viewer.user:
+            return redirect("/")
+        if not config.ALLOW_SIGNUP:
+            abort(404)
+        return render_template("auth.html", page="signup", mode="signup")
+
+    @app.get("/admin")
+    def page_admin():
+        if not g.viewer.user:
+            return redirect("/login?next=/admin")
+        if not g.viewer.is_admin:
+            abort(404)
+        return render_template("admin.html", page="admin")
+
+    @app.get("/admin/problems/new")
+    @app.get("/admin/problems/<slug>")
+    def page_admin_problem(slug=None):
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        if not g.viewer.is_admin or (slug and not problemstore.exists(slug)):
+            abort(404)
+        return render_template("admin_problem.html", page="admin", slug=slug or "")
 
     @app.get("/submissions")
     def page_submissions():
@@ -664,18 +837,20 @@ def create_app(service=None):
 
     @app.get("/api/problems")
     def problems():
-        return jsonify({"problems": [load_public_problem(s) for s in list_problem_slugs()],
+        admin = g.viewer.is_admin
+        return jsonify({"problems": [load_public_problem(s, include_hidden=admin)
+                                     for s in list_problem_slugs(include_hidden=admin)],
                         "languages": {k: v["label"] for k, v in config.LANGUAGES.items()}})
 
     @app.get("/api/problems/<slug>")
     def problem(slug):
-        return jsonify(load_public_problem(slug, detail=True))
+        return jsonify(load_public_problem(slug, detail=True, include_hidden=g.viewer.is_admin))
 
     @app.post("/api/submit")
     def submit():
         problem_slug, language, code = read_code_request()
         rate_limit("submit")
-        sid, seq = service.submit(g.session_id, problem_slug, language, code)
+        sid, seq = service.submit(g.viewer, problem_slug, language, code)
         return jsonify({"id": sid, "status": config.PENDING, "seq": seq,
                         "stream": f"/api/stream?submission={sid}&since={seq}"}), 202
 
@@ -695,8 +870,21 @@ def create_app(service=None):
         except ValueError:
             raise ApiError(400, "invalid_limit", "limit must be an integer") from None
         limit = max(1, min(limit, config.SUBMISSIONS_PAGE_MAX))
-        rows = service.db.list_submissions(limit=limit, session_id=g.session_id)
-        return jsonify({"submissions": [public_submission(r) for r in rows]})
+        scope = request.args.get("scope", "mine")
+        if scope == "all" and g.viewer.is_admin:
+            rows = service.db.list_submissions(limit=limit, with_username=True)
+        elif g.viewer.user:
+            rows = service.db.list_submissions(limit=limit, user_id=g.viewer.user_id, with_username=True)
+        else:
+            rows = service.db.list_submissions(limit=limit, session_id=g.session_id, anonymous_only=True)
+        out = []
+        for r in rows:
+            item = public_submission(r)
+            if "username" in r:
+                item["username"] = r["username"]
+            out.append(item)
+        return jsonify({"submissions": out, "scope": "all" if scope == "all" and g.viewer.is_admin else "mine",
+                        "account": public_user(g.viewer.user)})
 
     @app.get("/api/submissions/<int:submission_id>")
     def submission(submission_id):
@@ -725,7 +913,7 @@ def create_app(service=None):
         Result page can show a real side-by-side diff after a Wrong Answer.
         The hidden tests are not involved at all.
         """
-        row = own_submission(submission_id)
+        row = own_submission(submission_id, allow_admin=False)
         rate_limit("run_sample")
         try:
             return jsonify(service.run_sample(row["problem_slug"], row["language"], row["source"]))
@@ -734,7 +922,7 @@ def create_app(service=None):
 
     @app.get("/api/stream")
     def stream():
-        session_id = g.session_id
+        viewer = g.viewer
         only = request.args.get("submission")
         submission_id = None
         if only is not None:
@@ -769,7 +957,7 @@ def create_app(service=None):
                     yield sse_format("snapshot", public_submission(state))
 
                 def emit(event):
-                    out = translate_event(service, event, session_id)
+                    out = translate_event(service, event, viewer, allow_admin=submission_id is not None)
                     if out is None:
                         return None, False
                     name, data = out
@@ -827,7 +1015,171 @@ def create_app(service=None):
     @app.post("/api/inspector/stress")
     def inspector_stress():
         rate_limit("stress")
-        return jsonify(service.stress(g.session_id)), 202
+        return jsonify(service.stress(g.viewer)), 202
+
+    # ---------------------------------------------------------------- accounts
+    @app.get("/api/auth/me")
+    def auth_me():
+        return jsonify({"user": public_user(g.viewer.user), "allow_signup": config.ALLOW_SIGNUP})
+
+    @app.post("/api/auth/signup")
+    def auth_signup():
+        if not config.ALLOW_SIGNUP:
+            raise ApiError(403, "signup_closed", "new accounts are disabled on this server")
+        body = read_json()
+        rate_limit("auth")
+        try:
+            username = auth.validate_username(body.get("username"))
+            password = auth.validate_password(body.get("password"), username)
+        except auth.ValidationError as exc:
+            raise ApiError(400, "invalid_account", str(exc)) from None
+        try:
+            user_id = service.db.create_user(username, auth.hash_password(password))
+        except sqlite3.IntegrityError:
+            raise ApiError(409, "username_taken", "this username is already taken") from None
+        moved = log_in(user_id)
+        return jsonify({"user": {"username": username, "is_admin": False},
+                        "moved_submissions": moved}), 201
+
+    @app.post("/api/auth/login")
+    def auth_login():
+        body = read_json()
+        rate_limit("auth")
+        username, password = body.get("username"), body.get("password")
+        if not isinstance(username, str) or not isinstance(password, str) or len(password) > 1024:
+            raise ApiError(400, "missing_fields", "username and password are required")
+        user = service.db.get_user_by_name(username)
+        if user is None:
+            auth.burn_time(password)           # same delay as a real check
+            ok = False
+        else:
+            ok = auth.verify_password(password, user["password_hash"])
+        if not ok:
+            # One message for "no such user" and "wrong password": the answer
+            # must not reveal which usernames exist.
+            raise ApiError(401, "invalid_credentials", "wrong username or password")
+        moved = log_in(user["id"])
+        return jsonify({"user": public_user(user), "moved_submissions": moved})
+
+    @app.post("/api/auth/logout")
+    def auth_logout():
+        token = request.cookies.get(config.AUTH_COOKIE, "")
+        if token:
+            service.db.delete_auth_session(auth.token_hash(token))
+        g.clear_auth_cookie = True
+        return jsonify({"user": None})
+
+    # ---------------------------------------------------------------- admin
+    def admin_problem_payload(slug):
+        meta = problemstore.read_meta(slug)
+        folder = _problem_dir(slug)
+        with open(os.path.join(folder, "statement.md"), encoding="utf-8") as f:
+            statement = f.read()
+        with open(os.path.join(folder, "sample.in"), encoding="utf-8") as f:
+            sample_in = f.read()
+        with open(os.path.join(folder, "sample.out"), encoding="utf-8") as f:
+            sample_out = f.read()
+        return {"slug": slug, "index": meta.get("index", ""), "title": meta.get("title", slug),
+                "difficulty": meta.get("difficulty", "Easy"), "tags": meta.get("tags", []),
+                "time_limit_ms": meta.get("time_limit_ms", config.DEFAULT_TIME_LIMIT_MS),
+                "memory_limit_mb": meta.get("memory_limit_mb", config.DEFAULT_MEMORY_LIMIT_MB),
+                "hidden": bool(meta.get("hidden", False)), "validation": meta.get("validation"),
+                "updated_at": meta.get("updated_at"), "statement": statement,
+                "sample_input": sample_in, "sample_output": sample_out,
+                "tests": problemstore.tests_info(slug)}
+
+    def admin_slug(slug):
+        if not problemstore.exists(slug):
+            raise ApiError(404, "problem_not_found", f"unknown problem: {slug!r}")
+        return slug
+
+    @app.get("/api/admin/problems")
+    def admin_problems():
+        require_admin()
+        counts = {}
+        for row in service.db.list_submissions(limit=100000):
+            c = counts.setdefault(row["problem_slug"], {"submissions": 0, "accepted": 0})
+            c["submissions"] += 1
+            c["accepted"] += row["status"] == config.ACCEPTED
+        items = []
+        for slug in problemstore.list_slugs():
+            meta = problemstore.read_meta(slug)
+            items.append({"slug": slug, "index": meta.get("index", ""), "title": meta.get("title", slug),
+                          "difficulty": meta.get("difficulty", "Easy"), "tags": meta.get("tags", []),
+                          "hidden": bool(meta.get("hidden", False)), "validation": meta.get("validation"),
+                          "tests": problemstore.tests_info(slug), **counts.get(slug, {"submissions": 0, "accepted": 0})})
+        return jsonify({"problems": items, "next_index": problemstore.next_index(),
+                        "users": service.db.list_users()})
+
+    @app.get("/api/admin/problems/<slug>")
+    def admin_problem(slug):
+        require_admin()
+        return jsonify(admin_problem_payload(admin_slug(slug)))
+
+    @app.post("/api/admin/problems")
+    def admin_create_problem():
+        require_admin()
+        try:
+            slug = problemstore.save_problem(read_json(), creating=True)
+        except problemstore.ProblemStoreError as exc:
+            raise ApiError(400, "invalid_problem", str(exc)) from None
+        return jsonify(admin_problem_payload(slug)), 201
+
+    @app.put("/api/admin/problems/<slug>")
+    def admin_update_problem(slug):
+        require_admin()
+        admin_slug(slug)
+        try:
+            problemstore.save_problem(read_json(), slug=slug)
+        except problemstore.ProblemStoreError as exc:
+            raise ApiError(400, "invalid_problem", str(exc)) from None
+        return jsonify(admin_problem_payload(slug))
+
+    @app.post("/api/admin/problems/<slug>/visibility")
+    def admin_visibility(slug):
+        require_admin()
+        admin_slug(slug)
+        hidden = bool(read_json().get("hidden"))
+        if not hidden and problemstore.tests_info(slug)["count"] == 0:
+            raise ApiError(400, "no_tests", "upload tests before publishing")
+        problemstore.set_hidden(slug, hidden)
+        return jsonify(admin_problem_payload(slug))
+
+    @app.post("/api/admin/problems/<slug>/tests")
+    def admin_upload_tests(slug):
+        require_admin()
+        admin_slug(slug)
+        upload = request.files.get("file")
+        if upload is None:
+            raise ApiError(400, "missing_file", "send the ZIP as multipart form field 'file'")
+        try:
+            info = problemstore.replace_tests(slug, upload.read(problemstore.MAX_ZIP_BYTES + 1))
+        except problemstore.ProblemStoreError as exc:
+            raise ApiError(400, "invalid_tests", str(exc)) from None
+        return jsonify({**admin_problem_payload(slug), "uploaded": info})
+
+    @app.post("/api/admin/problems/<slug>/validate")
+    def admin_validate(slug):
+        require_admin()
+        admin_slug(slug)
+        body = read_json()
+        language, code = body.get("language"), body.get("code")
+        if language not in config.LANGUAGES or not isinstance(code, str) or not code.strip():
+            raise ApiError(400, "missing_fields", "language and code are required")
+        if len(code.encode("utf-8")) > config.MAX_CODE_BYTES:
+            raise ApiError(413, "code_too_large", "the code is too large")
+        if problemstore.tests_info(slug)["count"] == 0:
+            raise ApiError(400, "no_tests", "upload tests first")
+        rate_limit("validate")
+        try:
+            result = service.validate_solution(slug, language, code)
+        except sandbox.SandboxError as exc:
+            raise ApiError(500, "judge_error", f"the judge failed: {exc}") from None
+        problemstore.set_validation(slug, {"verdict": result["verdict"], "language": language,
+                                           "at": time.time(), "time_ms": result["time_ms"],
+                                           "tests": result["total_tests"],
+                                           "by": g.viewer.user["username"]})
+        return jsonify(result)
 
     return app
 

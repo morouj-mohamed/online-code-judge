@@ -1,11 +1,14 @@
 """
 judge/db.py - the SQLite layer: submissions, per-test results and events.
 
-Three tables
+Tables
     submissions   one row per submission, its status and final verdict
     test_results  one row per finished test (written the moment the test ends)
     events        the lifecycle events of a submission, kept so that a browser
                   that connects late (or reconnects) can replay what it missed
+    users         accounts (Phase 4b): username, scrypt password hash, admin flag
+    auth_sessions logged-in browsers: only the SHA-256 of the login token is
+                  stored, so a copy of the database cannot be used to log in
 
 Status model (the only legal moves):
 
@@ -94,6 +97,23 @@ CREATE TABLE IF NOT EXISTS events (
     details       TEXT    NOT NULL           -- JSON
 );
 CREATE INDEX IF NOT EXISTS idx_events_submission ON events(submission_id, id);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT    NOT NULL,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
+    created_at    REAL    NOT NULL,
+    last_login_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token_hash   TEXT    PRIMARY KEY,          -- sha256(token); the token itself lives only in the cookie
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   REAL    NOT NULL,
+    expires_at   REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 """
 
 
@@ -123,8 +143,12 @@ class Database:
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(submissions)")}
         if "session_id" not in columns:
             self._conn.execute("ALTER TABLE submissions ADD COLUMN session_id TEXT")
+        if "user_id" not in columns:
+            self._conn.execute("ALTER TABLE submissions ADD COLUMN user_id INTEGER REFERENCES users(id)")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_submissions_session ON submissions(session_id, id)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_submissions_user ON submissions(user_id, id)")
 
     # ------------------------------------------------------------------ plumbing
     @contextlib.contextmanager
@@ -155,13 +179,13 @@ class Database:
             self._conn.close()
 
     # ---------------------------------------------------------------- submissions
-    def create_submission(self, problem_slug, language, source, session_id=None):
+    def create_submission(self, problem_slug, language, source, session_id=None, user_id=None):
         """Insert a new submission in the Pending state and return its id."""
         with self._tx() as c:
             cur = c.execute(
-                "INSERT INTO submissions (problem_slug, language, source, status, session_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (problem_slug, language, source, config.PENDING, session_id, time.time()))
+                "INSERT INTO submissions (problem_slug, language, source, status, session_id, user_id, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (problem_slug, language, source, config.PENDING, session_id, user_id, time.time()))
             return cur.lastrowid
 
     def discard_pending(self, submission_id):
@@ -221,24 +245,105 @@ class Database:
     def get_submission(self, submission_id):
         return self._one("SELECT * FROM submissions WHERE id = ?", (submission_id,))
 
-    def list_submissions(self, status=None, limit=100, session_id=None):
-        """Newest first, optionally only one status and/or one browser session."""
+    def list_submissions(self, status=None, limit=100, session_id=None, user_id=None,
+                         anonymous_only=False, with_username=False):
+        """
+        Newest first. Filters (all optional):
+          status          only this status
+          session_id      only this browser session
+          user_id         only this account
+          anonymous_only  only submissions that belong to no account
+        """
         where, params = [], []
         if status is not None:
-            where.append("status = ?")
+            where.append("s.status = ?")
             params.append(status)
         if session_id is not None:
-            where.append("session_id = ?")
+            where.append("s.session_id = ?")
             params.append(session_id)
-        sql = "SELECT * FROM submissions"
+        if user_id is not None:
+            where.append("s.user_id = ?")
+            params.append(user_id)
+        if anonymous_only:
+            where.append("s.user_id IS NULL")
+        sql = ("SELECT s.*, u.username AS username FROM submissions s "
+               "LEFT JOIN users u ON u.id = s.user_id") if with_username else "SELECT s.* FROM submissions s"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        return self._all(sql + " ORDER BY id DESC LIMIT ?", (*params, limit))
+        return self._all(sql + " ORDER BY s.id DESC LIMIT ?", (*params, limit))
+
+    def get_owner(self, submission_id):
+        """(session_id, user_id) of a submission, or None if it does not exist."""
+        row = self._one("SELECT session_id, user_id FROM submissions WHERE id = ?", (submission_id,))
+        return (row["session_id"], row["user_id"]) if row else None
 
     def get_session_of(self, submission_id):
         """The session id that owns a submission (None if unknown or no owner)."""
-        row = self._one("SELECT session_id FROM submissions WHERE id = ?", (submission_id,))
-        return row["session_id"] if row else None
+        owner = self.get_owner(submission_id)
+        return owner[0] if owner else None
+
+    def claim_submissions(self, session_id, user_id):
+        """
+        Give the anonymous submissions of a browser session to an account
+        (called right after that browser logs in or signs up). Returns how many.
+        """
+        with self._tx() as c:
+            cur = c.execute("UPDATE submissions SET user_id = ? WHERE session_id = ? AND user_id IS NULL",
+                            (user_id, session_id))
+            return cur.rowcount
+
+    # --------------------------------------------------------------------- users
+    def create_user(self, username, password_hash, is_admin=False):
+        """Insert an account. Raises sqlite3.IntegrityError if the name is taken."""
+        with self._tx() as c:
+            cur = c.execute(
+                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
+                (username, password_hash, 1 if is_admin else 0, time.time()))
+            return cur.lastrowid
+
+    def get_user(self, user_id):
+        return self._one("SELECT * FROM users WHERE id = ?", (user_id,))
+
+    def get_user_by_name(self, username):
+        return self._one("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,))
+
+    def list_users(self):
+        return self._all("SELECT u.id, u.username, u.is_admin, u.created_at, u.last_login_at, "
+                         "(SELECT COUNT(*) FROM submissions s WHERE s.user_id = u.id) AS submissions "
+                         "FROM users u ORDER BY u.id")
+
+    def set_admin(self, user_id, is_admin):
+        with self._tx() as c:
+            return c.execute("UPDATE users SET is_admin = ? WHERE id = ?",
+                             (1 if is_admin else 0, user_id)).rowcount == 1
+
+    def set_password(self, user_id, password_hash):
+        """Change a password and log that account out everywhere."""
+        with self._tx() as c:
+            c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+            c.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+
+    def touch_login(self, user_id):
+        with self._tx() as c:
+            c.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (time.time(), user_id))
+
+    # ------------------------------------------------------------- login sessions
+    def create_auth_session(self, token_hash, user_id, ttl_s):
+        now = time.time()
+        with self._tx() as c:
+            c.execute("DELETE FROM auth_sessions WHERE expires_at < ?", (now,))   # tidy up old ones
+            c.execute("INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) "
+                      "VALUES (?, ?, ?, ?)", (token_hash, user_id, now, now + ttl_s))
+
+    def get_auth_user(self, token_hash):
+        """The account a login token belongs to, or None if unknown/expired."""
+        return self._one(
+            "SELECT u.id, u.username, u.is_admin FROM auth_sessions a JOIN users u ON u.id = a.user_id "
+            "WHERE a.token_hash = ? AND a.expires_at > ?", (token_hash, time.time()))
+
+    def delete_auth_session(self, token_hash):
+        with self._tx() as c:
+            c.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,))
 
     def count_by_status(self):
         rows = self._all("SELECT status, COUNT(*) AS n FROM submissions GROUP BY status")

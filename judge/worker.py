@@ -79,7 +79,8 @@ class WorkerPool:
         return len(recovered)
 
     # ----------------------------------------------------------------- producers
-    def submit(self, problem_slug, language, source, block=True, timeout=None, session_id=None):
+    def submit(self, problem_slug, language, source, block=True, timeout=None, session_id=None,
+               user_id=None):
         """
         Create a submission and queue it. Returns its id.
 
@@ -91,7 +92,8 @@ class WorkerPool:
         """
         if self._closing:
             raise PoolClosed("the pool is shutting down")
-        sid = self.db.create_submission(problem_slug, language, source, session_id=session_id)
+        sid = self.db.create_submission(problem_slug, language, source, session_id=session_id,
+                                        user_id=user_id)
         self._publish_status(sid, config.PENDING)       # before queueing: the worker
         try:                                             # may start at once
             self._enqueue(sid, block, timeout)
