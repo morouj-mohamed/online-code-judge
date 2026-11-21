@@ -120,6 +120,9 @@
   --text-muted: #C7A9B8;    /*  9.1:1 */
   --text-subtle: #A88A97;   /*  6.2:1 */
   --text-on-accent: #1A0510;
+  --accent-solid: #F2589B;        /* filled buttons */
+  --accent-solid-hover: #F675AD;
+  --text-on-solid: #1A0510;
 
   --accent: #F2589B;        /*  6.1:1 on --bg */
   --accent-hover: #F675AD;
@@ -188,6 +191,9 @@
   --text-muted: #5B4651;    /*  8.1:1 */
   --text-subtle: #6F5964;   /*  6.0:1 */
   --text-on-accent: #FFFFFF;
+  --accent-solid: #AD1457;
+  --accent-solid-hover: #95114B;
+  --text-on-solid: #FFFFFF;
 
   --accent: #AD1457;        /*  6.5:1 on --bg, 7.0:1 on white */
   --accent-hover: #95114B;

@@ -36,12 +36,12 @@
 .btn svg { width: 16px; height: 16px; }
 
 .btn-primary {
-  --btn-bg: var(--accent);
-  --btn-fg: var(--text-on-accent);
-  --btn-border: color-mix(in srgb, var(--accent) 80%, #000);
+  --btn-bg: var(--accent-solid);
+  --btn-fg: var(--text-on-solid);
+  --btn-border: color-mix(in srgb, var(--accent-solid) 80%, #000);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 6px 18px -8px var(--accent-glow);
 }
-.btn-primary:hover { --btn-bg: var(--accent-hover); box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 8px 22px -8px var(--accent-glow); }
+.btn-primary:hover { --btn-bg: var(--accent-solid-hover); box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 8px 22px -8px var(--accent-glow); }
 
 .btn-ghost { --btn-bg: transparent; --btn-border: transparent; color: var(--text-muted); }
 .btn-ghost:hover { --btn-bg: var(--surface-2); color: var(--text); }
@@ -233,12 +233,12 @@ button.chip[aria-pressed="true"] {
   border-radius: 50%;
   background: var(--text-subtle);
 }
-.dot[data-state="live"] { background: var(--accent); }
+.dot[data-state="live"] { background: var(--v-ok); }
 .dot[data-state="live"]::after {
   content: "";
   position: absolute; inset: -4px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--v-ok);
   opacity: 0;
   animation: ping 2s var(--ease-out) infinite;
 }
