@@ -99,7 +99,11 @@ export const api = {
 /** A human sentence for an ApiError, used in toasts. */
 export function describeError(err) {
   if (!(err instanceof ApiError)) return "Something went wrong. Please try again.";
-  if (err.code === "rate_limited") return `Slow down a little: try again in ${err.retryAfter || 60} s.`;
+  if (err.code === "rate_limited") {
+    const s = err.retryAfter || 60;
+    const when = s < 90 ? `${s} seconds` : `about ${Math.round(s / 60)} minutes`;
+    return `Too many tries in a short time. Please wait ${when} and try again.`;
+  }
   if (err.code === "queue_full") return "The judge queue is full right now. Try again in a few seconds.";
   if (err.code === "login_required") return "Log in first: contests need an account.";
   return err.message;

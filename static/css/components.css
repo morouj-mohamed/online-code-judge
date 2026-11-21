@@ -400,6 +400,9 @@ button.chip[aria-pressed="true"] {
   transform: translateY(-1px);
 }
 .problem-row:focus-within { border-color: var(--border-focus); }
+/* The whole card is the link (the title's ::after covers it), so the focus
+   ring goes around the card: a 1 px border change alone is too faint. */
+.problem-row:has(.problem-title:focus-visible) { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .problem-index {
   display: grid;
   place-items: center;
@@ -665,7 +668,14 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   border-bottom: var(--hairline) solid var(--border);
   background: var(--bg-elev);
 }
-.editor-toolbar .select { min-height: 32px; font-size: var(--text-xs); }
+.editor-toolbar .select { min-height: 32px; font-size: var(--text-xs); min-width: 0; }
+/* Small phones: the Reset label is only visually hidden (still read aloud), so
+   language, font size and Reset fit on one line. */
+@media (max-width: 420px) {
+  .editor-toolbar { gap: var(--s-1); padding-inline: var(--s-2); }
+  .editor-toolbar .js-reset > span:last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .editor-toolbar .js-reset { padding-inline: var(--s-2); }
+}
 @media (pointer: coarse) { .editor-toolbar .select { min-height: var(--touch); } }
 .font-size { display: inline-flex; align-items: center; gap: 2px; }
 .font-size output {
@@ -805,7 +815,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 
 .samples { display: grid; gap: var(--s-3); margin-top: var(--s-6); }
 .sample-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
-@media (max-width: 1200px) { .sample-pair { grid-template-columns: 1fr; } }
+@media (max-width: 1200px) { .sample-pair { grid-template-columns: minmax(0, 1fr); } }
 .io-block {
   border: var(--hairline) solid var(--border);
   border-radius: var(--r-sm);
@@ -952,7 +962,10 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .strip-legend { display: flex; flex-wrap: wrap; gap: var(--s-4); margin-top: var(--s-3); font-size: var(--text-xs); color: var(--text-subtle); }
 
 /* tables */
-.table-wrap { overflow-x: auto; }
+/* position: relative makes the wrap the containing block of the "whole row is
+   a link" ::after overlays, so they are clipped by the scroll box instead of
+   widening the page on a phone. */
+.table-wrap { overflow-x: auto; position: relative; }
 .table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 .table th {
   padding: var(--s-2) var(--s-4);
@@ -999,7 +1012,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 
 /* side-by-side diff */
 .diff { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
-@media (max-width: 720px) { .diff { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .diff { grid-template-columns: minmax(0, 1fr); } }
 .diff-col { border: var(--hairline) solid var(--border); border-radius: var(--r-sm); overflow: hidden; background: var(--code-bg); }
 .diff-col header {
   display: flex; align-items: center; gap: var(--s-2);
@@ -1123,7 +1136,8 @@ details.disclosure[open] > summary .chev { transform: rotate(90deg); }
   background:
     radial-gradient(520px 260px at 50% 0%, var(--accent-softer), transparent 70%);
 }
-.auth-card { width: min(420px, 100%); padding: var(--s-6); box-shadow: var(--shadow-2); }
+.auth-card { width: min(420px, 100%); min-width: 0; padding: var(--s-6); box-shadow: var(--shadow-2); }
+@media (max-width: 400px) { .auth-wrap { padding-inline: var(--s-3); } .auth-card { padding: var(--s-5) var(--s-4); } }
 .auth-head { display: grid; justify-items: center; gap: var(--s-2); text-align: center; margin-bottom: var(--s-5); }
 .auth-head h1 { font-size: var(--text-xl); }
 .brand-mark-lg { width: 48px; height: 48px; border-radius: 14px; margin-bottom: var(--s-2); }
@@ -1155,10 +1169,10 @@ details.disclosure[open] > summary .chev { transform: rotate(90deg); }
 .admin-form + .card, .card + .card.stack { margin-top: var(--s-5); }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4); }
 .form-grid .field-wide { grid-column: 1 / -1; }
-@media (max-width: 760px) { .form-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .form-grid { grid-template-columns: minmax(0, 1fr); } }
 .textarea { min-height: 120px; padding: var(--s-3); line-height: 1.6; resize: vertical; font-size: var(--text-sm); }
 .md-split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-4); }
-@media (max-width: 900px) { .md-split { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .md-split { grid-template-columns: minmax(0, 1fr); } }
 .md-split .textarea { min-height: 320px; height: 100%; }
 .md-preview {
   min-height: 320px; max-height: 520px; overflow: auto;
@@ -1335,10 +1349,10 @@ body.app-page .toasts { bottom: calc(var(--s-5) + 64px); }
 
 /* admin: student page, similarity */
 .avatar-lg { width: 40px; height: 40px; font-size: var(--text-lg); }
-.two-col { display: grid; grid-template-columns: 1fr 1.4fr; gap: var(--s-4); margin: var(--s-4) 0; }
-@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+.two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--s-4); margin: var(--s-4) 0; }
+@media (max-width: 900px) { .two-col { grid-template-columns: minmax(0, 1fr); } }
 #user-region > .card { margin-top: var(--s-4); }
-.vbar { display: grid; grid-template-columns: 190px 1fr 40px; align-items: center; gap: var(--s-3); padding: 6px 0; font-size: var(--text-sm); }
+.vbar { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 40px; align-items: center; gap: var(--s-3); padding: 6px 0; font-size: var(--text-sm); }
 .vbar-label { display: inline-flex; align-items: center; gap: 6px; color: var(--vc); font-weight: 600; }
 .vbar-track { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .vbar-fill { display: block; height: 100%; border-radius: 4px; background: var(--vc); }
@@ -1519,7 +1533,7 @@ details.disclosure .code-view { margin: 0 var(--s-4) var(--s-4); border: var(--h
 .log-type[data-type="submission"] { color: var(--v-tle); }
 .log-type[data-type="worker"] { color: var(--v-running); }
 .log-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 720px) { .log-line { grid-template-columns: 1fr; gap: 0; padding-block: 4px; border-bottom: var(--hairline) dashed var(--border); } .log-text { white-space: normal; } }
+@media (max-width: 720px) { .log-line { grid-template-columns: minmax(0, 1fr); gap: 0; padding-block: 4px; border-bottom: var(--hairline) dashed var(--border); } .log-text { white-space: normal; } }
 
 /* 8. concept drawer */
 .drawer {
