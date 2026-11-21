@@ -92,6 +92,15 @@ def validate_password(password, username=""):
     return password
 
 
+# No look-alike characters (0/O, 1/l/I), so a printed password is easy to type.
+_READABLE = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def readable_password(length=10):
+    """A random password for a new student: 10 characters, ~57 bits of randomness."""
+    return "".join(secrets.choice(_READABLE) for _ in range(length))
+
+
 def new_token():
     """A fresh login token (for the cookie) and its hash (for the database)."""
     token = secrets.token_urlsafe(32)

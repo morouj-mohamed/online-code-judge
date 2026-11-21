@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Add students · Admin · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page" id="admin-students">
+  <div class="page-head no-print">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <nav class="crumbs-inline" aria-label="Breadcrumb"><a href="/admin"><span data-icon="arrow-left" data-size="14"></span>Admin</a></nav>
+      <h1>Add students</h1>
+      <p class="muted">Create accounts for a whole class at once. Every student gets a random password you can print or download.</p>
+    </div>
+  </div>
+
+  <section class="card card-pad stack no-print js-input" aria-labelledby="in-title">
+    <h2 id="in-title" class="card-title">1. The class list</h2>
+    <div class="md-split">
+      <div class="field">
+        <label for="names">One username per line</label>
+        <textarea class="input textarea mono" id="names" rows="10" spellcheck="false"
+                  placeholder="ahmed_ali&#10;sara.hassan&#10;omar-2026" aria-describedby="names-hint"></textarea>
+        <p class="hint" id="names-hint">Optional: <span class="mono">username,password</span> on a line to choose the password yourself.
+          Usernames: 3–32 letters, digits, “_”, “.” or “-” (no emails).</p>
+      </div>
+      <div class="stack" style="gap: 12px">
+        <label class="dropzone js-dropzone" for="file">
+          <span data-icon="cloud" data-size="22"></span>
+          <span><strong>Or choose a CSV / TXT file</strong></span>
+          <span class="subtle js-file-name">From Excel: File → Save As → CSV. First column = username.</span>
+          <input class="sr-only" id="file" type="file" accept=".csv,.txt,text/csv,text/plain">
+        </label>
+        <p class="muted js-count" aria-live="polite">No names yet.</p>
+      </div>
+    </div>
+    <div class="row-wrap"><span class="spacer"></span>
+      <button class="btn btn-primary js-create" type="button" disabled>
+        <span data-icon="user" data-size="14"></span><span class="btn-label-idle">Create accounts</span><span class="btn-label-busy">Creating…</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="js-result" hidden aria-labelledby="out-title">
+    <div class="notice notice-warn no-print">
+      <span data-icon="lock"></span>
+      <span><strong>Save these passwords now.</strong> They are shown only once: the server keeps only a scrambled (hashed)
+        version it cannot turn back into the password. You can always give a student a new one from their page.</span>
+    </div>
+    <div class="section-title no-print"><h2 id="out-title">2. Hand out the passwords</h2><span class="spacer"></span>
+      <button class="btn js-download" type="button"><span data-icon="download" data-size="14"></span>Download CSV</button>
+      <button class="btn btn-primary js-print" type="button"><span data-icon="file-code" data-size="14"></span>Print cards</button>
+    </div>
+    <div class="js-skipped no-print"></div>
+    <ul class="login-cards js-cards" aria-label="New accounts"></ul>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-admin-students.js') }}"></script>{% endblock %}

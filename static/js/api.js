@@ -85,6 +85,8 @@ export const api = {
     deleteContest: (slug) => request("DELETE", `/api/admin/contests/${encodeURIComponent(slug)}`, { confirm: slug }),
     unlock: (slug, username) => request("POST", `/api/admin/contests/${encodeURIComponent(slug)}/unlock`, { username }),
     user: (name) => request("GET", `/api/admin/users/${encodeURIComponent(name)}`),
+    bulkUsers: (users) => request("POST", "/api/admin/users/bulk", { users }),
+    resetPassword: (name) => request("POST", `/api/admin/users/${encodeURIComponent(name)}/reset-password`, {}),
     similarity: (problem, contest, threshold) => request("GET",
       `/api/admin/similarity?problem=${encodeURIComponent(problem)}&threshold=${threshold}${contest ? `&contest=${encodeURIComponent(contest)}` : ""}`),
     pair: (a, b) => request("GET", `/api/admin/similarity/pair?a=${a}&b=${b}`),

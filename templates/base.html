@@ -79,7 +79,11 @@
   <footer class="site-footer">
     <div class="container">
       <span>Online Code Judge &middot; every run is a real <span class="mono">fork()</span> + <span class="mono">execve()</span> in a sandbox</span>
-      <span>Operating Systems course project</span>
+      <span class="footer-about">
+        <span>{{ about.course }} course project{% if about.institution %} &middot; {{ about.institution }}{% endif %} &middot; {{ about.year }}</span>
+        {% if about.team %}<span>by {{ about.team }}</span>{% endif %}
+        {% if about.repo %}<a href="{{ about.repo }}" rel="noopener" target="_blank"><span data-icon="file-code" data-size="14"></span>Source code</a>{% endif %}
+      </span>
     </div>
   </footer>
 

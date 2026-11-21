@@ -1358,3 +1358,24 @@ body.app-page .toasts { bottom: calc(var(--s-5) + 64px); }
 .diff-line.is-shared .ln { color: var(--v-tle); font-weight: 700; }
 .sim-col header { flex-wrap: wrap; }
 details.disclosure .code-view { margin: 0 var(--s-4) var(--s-4); border: var(--hairline) solid var(--border); border-radius: var(--r-sm); background: var(--code-bg); }
+
+/* ===================================================== student accounts === */
+.login-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-3); }
+.login-card {
+  display: grid; gap: var(--s-2);
+  padding: var(--s-4);
+  border: var(--hairline) dashed var(--border-strong);
+  border-radius: var(--r);
+  background: var(--surface-1);
+  break-inside: avoid;
+}
+.lc-row { display: flex; justify-content: space-between; gap: var(--s-3); font-size: var(--text-sm); }
+.lc-row span:first-child { color: var(--text-subtle); }
+.lc-row strong { font-size: var(--text-md); letter-spacing: 0.04em; }
+.new-password { padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); background: var(--accent-soft); font-size: var(--text-sm); }
+@media print {
+  .login-cards { grid-template-columns: repeat(2, 1fr); gap: 8mm; }
+  .login-card { border: 1px dashed #000; background: #fff; color: #000; padding: 6mm; }
+  .login-card .eyebrow, .lc-row span:first-child { color: #333; }
+  .page { padding: 0; }
+}

@@ -217,9 +217,21 @@ AUTH_TTL_S = 30 * 24 * 3600
 # Admins are made with:  python3 tools/manage_users.py create-admin <name>
 ALLOW_SIGNUP = os.environ.get("JUDGE_ALLOW_SIGNUP", "1") == "1"
 
+# ----------------------------------------------------------------------------
+# About the project (shown in the footer of every page) - EDIT THESE
+# ----------------------------------------------------------------------------
+COURSE_NAME = os.environ.get("JUDGE_COURSE", "Operating Systems")
+INSTITUTION = os.environ.get("JUDGE_INSTITUTION", "")          # e.g. "Faculty of Computers, Cairo University"
+TEAM = os.environ.get("JUDGE_TEAM", "")                        # e.g. "Morouj Mohamed, Ahmed Ali, Sara Hassan"
+PROJECT_YEAR = os.environ.get("JUDGE_YEAR", "2026")
+REPOSITORY_URL = os.environ.get("JUDGE_REPO_URL", "https://github.com/morouj-mohamed/online-code-judge")
+
 # Folder for the self-signed TLS certificate (created on first start), so the
 # server answers https:// as well as http:// on the same port.
 TLS_DIR = os.environ.get("JUDGE_TLS_DIR", os.path.join(os.path.dirname(DB_PATH), "tls"))
+
+# Creating student accounts in bulk (admin page): at most this many per upload.
+BULK_USERS_MAX = 300
 
 # Graceful shutdown: how long running submissions may take to finish.
 SHUTDOWN_TIMEOUT_S = 30.0

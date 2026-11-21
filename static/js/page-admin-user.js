@@ -62,6 +62,22 @@ function render(d) {
         || '<tr><td colspan="7" class="muted">No submissions.</td></tr>'}</tbody></table></div></section>`;
 }
 
+document.querySelector(".js-reset-password").addEventListener("click", async (event) => {
+  if (!window.confirm(`Give ${username} a new password? The old one stops working and they are logged out.`)) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const result = await api.admin.resetPassword(username);
+    const box = document.querySelector(".js-new-password");
+    box.innerHTML = `New password: <strong class="mono">${escapeHtml(result.password)}</strong> <span class="subtle">(shown once)</span>`;
+    box.hidden = false;
+  } catch (error) {
+    alert(describeError(error));
+  } finally {
+    button.disabled = false;
+  }
+});
+
 api.admin.user(username).then(render).catch((error) => {
   region.setAttribute("aria-busy", "false");
   region.innerHTML = `<div class="state" data-kind="error" role="alert"><span class="state-icon">${icon("alert")}</span>

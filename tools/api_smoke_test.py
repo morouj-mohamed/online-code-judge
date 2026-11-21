@@ -646,6 +646,24 @@ def main():
         check("before the start: problems are not shown", st == 200 and detail_up["problems"] == [])
         st, _, _ = admin.request("DELETE", f"/api/admin/contests/{c_slug}", body={"confirm": c_slug})
         check("delete contest", st == 200)
+
+        print("[12c] Student accounts in bulk")
+        tag = secrets.token_hex(2)
+        rows = [{"username": f"cls_{tag}_a"}, {"username": f"cls_{tag}_b", "password": "chosen-pass-1"},
+                {"username": "bad@mail.com"}, {"username": f"cls_{tag}_a"}]
+        st, bulk, _ = admin.request("POST", "/api/admin/users/bulk", body={"users": rows})
+        check("bulk create: 2 created, email and duplicate skipped",
+              st == 201 and len(bulk["created"]) == 2 and len(bulk["skipped"]) == 2,
+              ", ".join(f"{s_['username']}: {s_['reason'][:30]}" for s_ in bulk["skipped"]))
+        gen = next(u for u in bulk["created"] if u["username"].endswith("_a"))
+        st, _, _ = Client(args.base).request("POST", "/api/auth/login", body={"username": gen["username"], "password": gen["password"]})
+        check("a generated password works", st == 200 and len(gen["password"]) == 10)
+        st, _, _ = erin.request("POST", "/api/admin/users/bulk", body={"users": rows})
+        check("bulk create is admin-only", st == 403)
+        st, reset, _ = admin.request("POST", f"/api/admin/users/{gen['username']}/reset-password", body={})
+        st_old, _, _ = Client(args.base).request("POST", "/api/auth/login", body={"username": gen["username"], "password": gen["password"]})
+        st_new, _, _ = Client(args.base).request("POST", "/api/auth/login", body={"username": gen["username"], "password": reset["password"]})
+        check("reset password: old one refused, new one works", st == 200 and st_old == 401 and st_new == 200)
         demote_admin()
 
     # ------------------------------------------------------------ 13. leak scan

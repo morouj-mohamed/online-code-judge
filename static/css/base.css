@@ -262,3 +262,12 @@ html.no-transitions *::after { transition: none !important; }
     scroll-behavior: auto !important;
   }
 }
+
+.footer-about { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+.footer-about a { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; color: var(--text-muted); text-decoration: none; }
+.footer-about a:hover { color: var(--accent); }
+@media (pointer: coarse) { .footer-about a { min-height: var(--touch); } }
+@media print {
+  .site-header, .site-footer, .skip-link, .toasts, .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+}

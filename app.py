@@ -653,7 +653,9 @@ def create_app(service=None):
 
     @app.context_processor
     def template_globals():
-        return {"viewer": g.get("viewer"), "allow_signup": config.ALLOW_SIGNUP}
+        return {"viewer": g.get("viewer"), "allow_signup": config.ALLOW_SIGNUP,
+                "about": {"course": config.COURSE_NAME, "institution": config.INSTITUTION,
+                          "team": config.TEAM, "year": config.PROJECT_YEAR, "repo": config.REPOSITORY_URL}}
 
     @app.after_request
     def finish_response(response):
@@ -873,6 +875,14 @@ def create_app(service=None):
         if not g.viewer.is_admin or service.db.get_user_by_name(username) is None:
             abort(404)
         return render_template("admin_user.html", page="admin", username=username)
+
+    @app.get("/admin/students")
+    def page_admin_students():
+        if not g.viewer.user:
+            return redirect(f"/login?next={request.path}")
+        if not g.viewer.is_admin:
+            abort(404)
+        return render_template("admin_students.html", page="admin")
 
     @app.get("/admin/similarity")
     def page_admin_similarity():
@@ -1359,6 +1369,56 @@ def create_app(service=None):
             "exam_events": [{**e, "label": contestmod.EVENT_KINDS.get(e["kind"], e["kind"])}
                             for e in service.db.contest_events_of_user(user["id"])],
         })
+
+    # ------------------------------------------- admin: accounts in bulk
+    @app.post("/api/admin/users/bulk")
+    def admin_bulk_users():
+        """
+        Create many student accounts at once (a class list). Each one gets a
+        random password, returned ONCE in this answer (the server keeps only
+        the hash), so the teacher can print or download them right away.
+        """
+        require_admin()
+        body = read_json()
+        rows = body.get("users")
+        if not isinstance(rows, list) or not rows:
+            raise ApiError(400, "missing_users", "send {\"users\": [{\"username\": ...}, ...]}")
+        if len(rows) > config.BULK_USERS_MAX:
+            raise ApiError(400, "too_many_users", f"at most {config.BULK_USERS_MAX} accounts per upload")
+        created, skipped, seen = [], [], set()
+        for row in rows:
+            username = (row.get("username") if isinstance(row, dict) else row) or ""
+            username = str(username).strip()
+            password = row.get("password") if isinstance(row, dict) else None
+            key = username.lower()
+            if not username or key in seen:
+                if username:
+                    skipped.append({"username": username, "reason": "listed twice"})
+                continue
+            seen.add(key)
+            try:
+                auth.validate_username(username)
+                password = auth.validate_password(password, username) if password else auth.readable_password()
+            except auth.ValidationError as exc:
+                skipped.append({"username": username, "reason": str(exc)})
+                continue
+            try:
+                service.db.create_user(username, auth.hash_password(password))
+            except sqlite3.IntegrityError:
+                skipped.append({"username": username, "reason": "already exists"})
+                continue
+            created.append({"username": username, "password": password})
+        return jsonify({"created": created, "skipped": skipped}), 201 if created else 200
+
+    @app.post("/api/admin/users/<username>/reset-password")
+    def admin_reset_password(username):
+        require_admin()
+        user = service.db.get_user_by_name(username)
+        if user is None:
+            raise ApiError(404, "user_not_found", f"no account {username!r}")
+        password = auth.readable_password()
+        service.db.set_password(user["id"], auth.hash_password(password))   # also logs them out
+        return jsonify({"username": user["username"], "password": password})
 
     # ----------------------------------------------- admin: similarity check
     @app.get("/api/admin/similarity")

@@ -8,6 +8,10 @@
       <h1 class="row"><span class="avatar avatar-lg" aria-hidden="true">{{ username[:1] | upper }}</span>{{ username }}</h1>
       <p class="muted js-subtitle"></p>
     </div>
+    <div class="stack" style="gap: 8px; align-items: flex-end">
+      <button class="btn js-reset-password" type="button"><span data-icon="lock" data-size="14"></span>Reset password</button>
+      <p class="new-password js-new-password" role="status" hidden></p>
+    </div>
   </div>
   <div id="user-region" aria-busy="true"><div class="skeleton" style="height: 240px; border-radius: 12px"></div></div>
 </div>
