@@ -48,6 +48,9 @@ form.addEventListener("submit", async (event) => {
   errorBox.hidden = true;
   if (!username.value.trim()) return showError("Enter your username.", username);
   if (!password.value) return showError("Enter your password.", password);
+  if (username.value.includes("@")) {
+    return showError("Use a short username (for example “morouj”), not an email address.", username);
+  }
   if (mode === "signup" && !username.checkValidity()) {
     return showError("Username: 3 to 32 characters, letters, digits, “_”, “.” or “-”.", username);
   }

@@ -76,6 +76,8 @@ def burn_time(password):
 
 
 def validate_username(username):
+    if isinstance(username, str) and "@" in username:
+        raise ValidationError("Username: use a short name (for example morouj), not an email address.")
     if not isinstance(username, str) or not USERNAME_RE.match(username):
         raise ValidationError("Username: 3 to 32 characters, letters, digits, '_', '.' or '-', "
                               "starting with a letter or digit.")
