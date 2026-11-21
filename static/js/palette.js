@@ -16,6 +16,7 @@ let items = [];
 let shown = [];
 let active = 0;
 let problemsLoaded = false;
+let loading = null;          // the request that loads the problems (a Promise)
 
 const PAGES = [
   { group: "Pages", label: "Problems", hint: "Home", icon: "grid", href: "/" },
@@ -82,7 +83,12 @@ function choose(index) {
   else if (item.run) item.run();
 }
 
-async function loadProblems() {
+function loadProblems() {
+  if (!loading) loading = fetchProblems();
+  return loading;
+}
+
+async function fetchProblems() {
   if (problemsLoaded) return;
   problemsLoaded = true;
   try {
@@ -100,6 +106,7 @@ async function loadProblems() {
     if (dialog.open) render();
   } catch {
     problemsLoaded = false;   // try again next time
+    loading = null;
   }
 }
 
@@ -136,7 +143,11 @@ function build() {
       render();
     } else if (event.key === "Enter") {
       event.preventDefault();
-      choose(active);
+      // Typed faster than the problem list arrived? Wait for it, then choose.
+      loadProblems().then(() => {
+        render();
+        choose(active);
+      });
     }
   });
   listEl.addEventListener("click", (event) => {
