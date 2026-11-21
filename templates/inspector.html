@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}OS Inspector · Online Code Judge{% endblock %}
+{% block content %}
+<div class="container page inspector" id="inspector">
+  <div class="page-head">
+    <div class="stack" style="gap: 8px; flex: 1 1 auto">
+      <p class="eyebrow">Live view of the judge's operating-system work</p>
+      <h1>OS Inspector</h1>
+      <div class="row-wrap">
+        <span class="js-isolation" aria-live="polite"></span>
+        <span class="live-chip js-stream" role="status"><span class="dot" data-state="connecting" aria-hidden="true"></span><span class="js-stream-text">Connecting…</span></span>
+      </div>
+    </div>
+    <p class="muted insp-intro">Every number on this page comes from the real judge: worker threads, the bounded
+      queue, and the processes it forks, as they happen. Click <span class="kbd">OS concept</span> on a panel to see the
+      theory behind it and the exact code that does it.</p>
+  </div>
+
+  {% if not (viewer and viewer.is_admin) %}
+  <div class="notice">
+    <span data-icon="info"></span>
+    <span>You see the workers and the queue of the whole judge, and the processes of <strong>your own</strong> submissions.
+      {% if viewer and viewer.user %}Admins see every run.{% else %}<a href="/login?next=/inspector">Log in</a> as an admin to see every run.{% endif %}</span>
+  </div>
+  {% endif %}
+
+  <div class="insp-grid">
+    <!-- 1. Worker pool -->
+    <section class="card insp-panel insp-workers" data-panel="workers" aria-labelledby="p-workers">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">1</span>
+        <h2 id="p-workers">Worker pool</h2>
+        <span class="spacer"></span>
+        <span class="subtle js-workers-sum"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="workers" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <ul class="worker-grid js-workers" aria-label="Worker threads"></ul>
+    </section>
+
+    <!-- 7. Stress + throughput -->
+    <section class="card insp-panel insp-stress" data-panel="stress" aria-labelledby="p-stress">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">7</span>
+        <h2 id="p-stress">Load &amp; throughput</h2>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="stress" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <div class="throughput">
+        <div><p class="eyebrow">Judged, last 60 s</p><p class="big-num js-tp-60" aria-live="polite">0</p><p class="subtle js-tp-rate">0 / min</p></div>
+        <div><p class="eyebrow">Tests run, last 60 s</p><p class="big-num js-tp-tests">0</p><p class="subtle js-tp-total">since this page opened: 0</p></div>
+      </div>
+      <div class="tp-bars js-tp-bars" role="img" aria-label="Submissions finished per 5 seconds, last 2 minutes"></div>
+      <button class="btn btn-primary btn-block js-stress" type="button">
+        <span data-icon="activity" data-size="14"></span><span class="btn-label-idle">Stress test: 20 mixed submissions</span><span class="btn-label-busy">Queuing…</span>
+      </button>
+      <p class="subtle hint">Correct, wrong, infinite loops, a fork bomb, a memory hog… all through the real sandbox.</p>
+    </section>
+
+    <!-- 2. Queue -->
+    <section class="card insp-panel insp-queue" data-panel="queue" aria-labelledby="p-queue">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">2</span>
+        <h2 id="p-queue">Submission queue <span class="subtle">(bounded buffer)</span></h2>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="queue" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <div class="queue-stats js-queue-stats" aria-live="polite"></div>
+      <div class="queue-track">
+        <span class="queue-end">in<span data-icon="arrow-right" data-size="14"></span></span>
+        <ol class="queue-cells js-queue-cells" aria-label="Queue slots, oldest first"></ol>
+        <span class="queue-end">out<span data-icon="arrow-right" data-size="14"></span></span>
+        <ol class="queue-out js-queue-out" aria-label="Recently taken by a worker"></ol>
+      </div>
+      <p class="queue-caption">
+        <strong>put()</strong>: <code>empty_slots.acquire()</code> → <code>mutex</code> → append → <code>full_slots.release()</code>
+        &nbsp;·&nbsp; <strong>get()</strong>: <code>full_slots.acquire()</code> → <code>mutex</code> → popleft → <code>empty_slots.release()</code>.
+        A full queue blocks producers; an empty one puts workers to sleep.
+      </p>
+    </section>
+
+    <!-- 3. Process lifecycle -->
+    <section class="card insp-panel insp-timeline" data-panel="timeline" aria-labelledby="p-timeline">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">3</span>
+        <h2 id="p-timeline">Process lifecycle</h2>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="timeline" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <div class="row-wrap timeline-controls">
+        <label class="sr-only" for="run-select">Run to show</label>
+        <select class="select js-run-select" id="run-select"><option value="">Waiting for a run…</option></select>
+        <label class="check check-inline"><input type="checkbox" class="js-follow" checked> Follow the newest run</label>
+      </div>
+      <div class="js-timeline" aria-live="polite"></div>
+    </section>
+
+    <!-- 4. Limits + 5. isolation -->
+    <section class="card insp-panel insp-limits" data-panel="limits" aria-labelledby="p-limits">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">4</span>
+        <h2 id="p-limits">Resource limits</h2>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="limits" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <p class="subtle js-limits-source">No user program has run since the server started.</p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Resource limits of the last run"><table class="table limits-table">
+        <caption class="sr-only">setrlimit values applied to the last run</caption>
+        <thead><tr><th scope="col">Limit</th><th scope="col" class="num">Value</th><th scope="col">When exceeded</th></tr></thead>
+        <tbody class="js-limits"></tbody></table></div>
+      <h3 class="eyebrow" style="margin-top: 16px">Per-language multipliers</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Per-language multipliers"><table class="table">
+        <caption class="sr-only">Time and memory multipliers per language</caption>
+        <thead><tr><th scope="col">Language</th><th scope="col" class="num">Time ×</th><th scope="col" class="num">Memory ×</th></tr></thead>
+        <tbody class="js-multipliers"></tbody></table></div>
+      <p class="subtle hint js-watchdog"></p>
+    </section>
+
+    <section class="card insp-panel insp-isolation" data-panel="isolation" aria-labelledby="p-isolation">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">5</span>
+        <h2 id="p-isolation">Isolation level</h2>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="isolation" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <div class="js-isolation-detail"></div>
+    </section>
+
+    <!-- 6. Event log -->
+    <section class="card insp-panel insp-log" data-panel="log" aria-labelledby="p-log">
+      <header class="insp-head">
+        <span class="insp-num" aria-hidden="true">6</span>
+        <h2 id="p-log">Event log</h2>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm js-concept" type="button" data-panel="log" aria-haspopup="dialog"><span data-icon="info" data-size="14"></span>OS concept</button>
+      </header>
+      <div class="row-wrap log-controls">
+        <div class="row-wrap js-log-filters" role="group" aria-label="Show event types"></div>
+        <span class="spacer"></span>
+        <span class="subtle js-log-paused" aria-live="polite"></span>
+        <button class="btn btn-sm js-log-pause" type="button" aria-pressed="false"><span data-icon="minus" data-size="14"></span><span>Pause</span></button>
+        <button class="btn btn-ghost btn-sm js-log-clear" type="button">Clear</button>
+      </div>
+      <div class="event-log js-log-scroll" role="log" aria-live="polite" aria-relevant="additions" aria-label="Judge events, newest last" tabindex="0">
+        <ol class="log-list js-log"></ol>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- 8. OS concept drawer -->
+<dialog class="drawer js-drawer" aria-labelledby="drawer-title">
+  <header class="drawer-head">
+    <p class="eyebrow js-drawer-eyebrow">OS concept</p>
+    <h2 id="drawer-title" class="js-drawer-title">OS concept</h2>
+    <button class="btn btn-ghost btn-icon js-drawer-close" type="button" aria-label="Close"><span data-icon="x"></span></button>
+  </header>
+  <div class="drawer-body js-drawer-body"></div>
+</dialog>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/page-inspector.js') }}"></script>{% endblock %}

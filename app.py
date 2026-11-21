@@ -70,6 +70,7 @@ from werkzeug.serving import WSGIRequestHandler, make_server
 
 import config
 from judge import auth
+from judge import concepts as conceptmod
 from judge import contests as contestmod
 from judge import db as dbmod
 from judge import events as evmod
@@ -536,10 +537,21 @@ class JudgeService:
             last = None if self._last_limits is None else dict(self._last_limits)
         busy = config.SAMPLE_RUNNERS - self.sample_slots.qsize()
         return {
+            "server_time": time.time(),
             "server": {"pid": os.getpid(), "uptime_s": round(time.time() - self.started_at, 1),
                        "threads": threading.active_count(), "python": sys.version.split()[0]},
+            # Per-language multipliers and the fixed limits from config.py.
+            "languages": {k: {"label": v["label"], "time_mult": v["time_mult"], "mem_mult": v["mem_mult"]}
+                          for k, v in config.LANGUAGES.items()},
+            "limits_config": {"RLIMIT_NPROC": config.NPROC_LIMIT, "RLIMIT_NOFILE": config.NOFILE_LIMIT,
+                              "RLIMIT_FSIZE_mb": config.FSIZE_LIMIT_MB, "RLIMIT_CORE": 0,
+                              "watchdog_wall_factor": config.WATCHDOG_WALL_FACTOR,
+                              "watchdog_extra_s": config.WATCHDOG_EXTRA_S,
+                              "default_time_ms": config.DEFAULT_TIME_LIMIT_MS,
+                              "default_memory_mb": config.DEFAULT_MEMORY_LIMIT_MB},
             "isolation": {"level": iso.level, "chroot": iso.chroot,
-                          "drop_privileges": iso.drop_privileges, "description": iso.description},
+                          "drop_privileges": iso.drop_privileges, "description": iso.description,
+                          "sandbox_uid_base": config.SANDBOX_UID},
             "queue": snap["queue"],
             "workers": workers,
             "stats": snap["stats"],
@@ -1051,6 +1063,8 @@ def create_app(service=None):
             if not str(since).isdigit():
                 raise ApiError(400, "invalid_since", "since / Last-Event-ID must be a number")
             since = int(since)
+        # Admins may watch EVERY submission's processes (the Inspector page).
+        everything = request.args.get("scope") == "all" and viewer.is_admin
         types = request.args.get("types")
         wanted = set(t.strip() for t in types.split(",") if t.strip()) if types else None
 
@@ -1073,7 +1087,8 @@ def create_app(service=None):
                     yield sse_format("snapshot", public_submission(state))
 
                 def emit(event):
-                    out = translate_event(service, event, viewer, allow_admin=submission_id is not None)
+                    out = translate_event(service, event, viewer,
+                                          allow_admin=submission_id is not None or everything)
                     if out is None:
                         return None, False
                     name, data = out
@@ -1123,6 +1138,14 @@ def create_app(service=None):
 
         return Response(stream_with_context(generate()), mimetype="text/event-stream",
                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.get("/inspector")
+    def page_inspector():
+        return render_template("inspector.html", page="inspector")
+
+    @app.get("/api/inspector/concepts")
+    def inspector_concepts():
+        return jsonify(conceptmod.catalog())
 
     @app.get("/api/inspector/state")
     def inspector_state():

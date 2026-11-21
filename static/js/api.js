@@ -43,6 +43,7 @@ async function request(method, path, body) {
 }
 
 export const api = {
+  request,
   problems: () => request("GET", "/api/problems"),
   problem: (slug, contest) =>
     request("GET", `/api/problems/${encodeURIComponent(slug)}${contest ? `?contest=${encodeURIComponent(contest)}` : ""}`),

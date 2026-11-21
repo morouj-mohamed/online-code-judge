@@ -16,6 +16,7 @@ export function openStream(params = {}, handlers = {}, onState = () => {}) {
   if (params.submission != null) query.set("submission", params.submission);
   if (params.since != null) query.set("since", params.since);
   if (params.types) query.set("types", params.types.join(","));
+  if (params.scope) query.set("scope", params.scope);
   const url = `/api/stream${query.toString() ? `?${query}` : ""}`;
 
   let closed = false;

@@ -81,6 +81,10 @@ class BoundedQueue:
         # Protected by `_mutex`. Needed only to wake them up in close().
         self._waiting_puts = 0
         self._waiting_gets = 0
+        # How many items ever went in / came out (for the OS Inspector page).
+        # Protected by `_mutex` like the deque itself.
+        self.produced = 0
+        self.consumed = 0
 
     # ------------------------------------------------------------------ producer
     def put(self, item, block=True, timeout=None):
@@ -110,6 +114,7 @@ class BoundedQueue:
                 self._empty_slots.release()
                 raise Closed("queue is closed")
             self._items.append(item)
+            self.produced += 1
         # Step 3: announce the item. Only now can a consumer take it.
         self._full_slots.release()
 
@@ -140,6 +145,7 @@ class BoundedQueue:
                 # A permit with no item: it came from close() waking us up.
                 raise Closed("queue is closed and empty")
             item = self._items.popleft()
+            self.consumed += 1
         self._empty_slots.release()   # one more free place
         return item
 
@@ -163,6 +169,12 @@ class BoundedQueue:
             self._empty_slots.release()
 
     # ------------------------------------------------------------------- inspect
+    def snapshot(self):
+        """A consistent picture: items in FIFO order (oldest first) and the counters."""
+        with self._mutex:
+            return {"items": list(self._items), "length": len(self._items), "capacity": self.capacity,
+                    "produced": self.produced, "consumed": self.consumed}
+
     def qsize(self):
         with self._mutex:
             return len(self._items)

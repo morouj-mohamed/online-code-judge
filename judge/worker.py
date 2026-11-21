@@ -222,7 +222,8 @@ class WorkerPool:
                           time.time(), None, {"status": status, **extra})
 
     def _publish_queue(self):
-        self.broker.publish("queue", {"length": self.queue.qsize(), "capacity": self.queue.capacity})
+        # items (FIFO order), length, capacity, produced, consumed: one consistent snapshot.
+        self.broker.publish("queue", self.queue.snapshot())
 
     def snapshot(self):
         """A consistent picture of the pool, safe to call from any thread."""
@@ -231,7 +232,7 @@ class WorkerPool:
             stats = dict(self._stats)
             outstanding = self._outstanding
         return {"time": time.time(), "closing": self._closing,
-                "queue": {"length": self.queue.qsize(), "capacity": self.queue.capacity},
+                "queue": self.queue.snapshot(),
                 "workers": workers, "stats": stats, "outstanding": outstanding}
 
     # ------------------------------------------------------------------ shutdown
