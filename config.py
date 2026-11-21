@@ -217,5 +217,9 @@ AUTH_TTL_S = 30 * 24 * 3600
 # Admins are made with:  python3 tools/manage_users.py create-admin <name>
 ALLOW_SIGNUP = os.environ.get("JUDGE_ALLOW_SIGNUP", "1") == "1"
 
+# Folder for the self-signed TLS certificate (created on first start), so the
+# server answers https:// as well as http:// on the same port.
+TLS_DIR = os.environ.get("JUDGE_TLS_DIR", os.path.join(os.path.dirname(DB_PATH), "tls"))
+
 # Graceful shutdown: how long running submissions may take to finish.
 SHUTDOWN_TIMEOUT_S = 30.0

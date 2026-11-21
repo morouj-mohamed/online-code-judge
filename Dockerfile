@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends gcc g++ libc6-dev python3 python3-venv \
+ && apt-get install -y --no-install-recommends gcc g++ libc6-dev python3 python3-venv openssl \
  && rm -rf /var/lib/apt/lists/*
 
 # Flask goes into a virtual environment (Ubuntu forbids pip installs into the

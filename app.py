@@ -54,7 +54,11 @@ import json
 import os
 import re
 import secrets
+import shutil
 import signal
+import socket
+import ssl
+import subprocess
 import sqlite3
 import sys
 import threading
@@ -62,7 +66,7 @@ import time
 
 from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, stream_with_context
 from werkzeug.exceptions import HTTPException
-from werkzeug.serving import WSGIRequestHandler
+from werkzeug.serving import WSGIRequestHandler, make_server
 
 import config
 from judge import auth
@@ -636,7 +640,8 @@ def create_app(service=None):
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return None
         origin = request.headers.get("Origin")
-        if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+        # Compare host:port only: the same server answers on http:// and https://.
+        if origin and origin.split("://", 1)[-1].rstrip("/") != request.host:
             raise ApiError(403, "bad_origin", "cross-site requests are not allowed")
         return None
 
@@ -1599,6 +1604,94 @@ class FriendlyRequestHandler(WSGIRequestHandler):
         super().log_request(code, size)
 
 
+# ============================================================================
+# http:// and https:// on the same port
+# ============================================================================
+class QuietSSLSocket(ssl.SSLSocket):
+    """
+    When a browser closes an https connection (for example by leaving a page
+    with a live stream), the next read/write fails with an ssl.SSLError.
+    Werkzeug treats ConnectionError as an ordinary "client went away" and stays
+    quiet, but prints a full traceback for SSLError. Translate it.
+    """
+
+    def send(self, data, flags=0):
+        try:
+            return super().send(data, flags)
+        except ssl.SSLError as exc:
+            raise ConnectionResetError(str(exc)) from exc
+
+    def read(self, len=1024, buffer=None):
+        try:
+            return super().read(len, buffer)
+        except ssl.SSLError as exc:
+            raise ConnectionResetError(str(exc)) from exc
+
+
+def tls_context():
+    """
+    Some browsers insist on https:// even for 127.0.0.1. So the server also
+    speaks TLS, with a self-signed certificate it creates once (with the
+    openssl tool) and keeps next to the database. The browser shows a warning
+    for a self-signed certificate the first time ("Advanced" -> "Continue").
+    Returns None if openssl is not available (then only http:// works).
+    """
+    folder = config.TLS_DIR
+    cert, key = os.path.join(folder, "cert.pem"), os.path.join(folder, "key.pem")
+    if not (os.path.isfile(cert) and os.path.isfile(key)):
+        openssl = shutil.which("openssl")
+        if openssl is None:
+            return None
+        os.makedirs(folder, exist_ok=True)
+        try:
+            # A system tool run once at start-up (never user code).
+            subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825",
+                            "-keyout", key, "-out", cert, "-subj", "/CN=Online Code Judge (local)",
+                            "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
+                           check=True, capture_output=True, timeout=60)
+            os.chmod(key, 0o600)
+        except (OSError, subprocess.SubprocessError):
+            return None
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    context.sslsocket_class = QuietSSLSocket
+    return context
+
+
+def serve_both_protocols(server, context):
+    """
+    Look at the first byte of every new connection without consuming it
+    (MSG_PEEK). A TLS connection always starts with 0x16 ("handshake"); plain
+    HTTP starts with a letter ("GET", "POST"). TLS connections are wrapped in
+    an SSL socket, so the rest of the server reads plain HTTP from both.
+    This runs in the per-connection thread, so a slow client blocks nobody.
+    """
+    original = server.finish_request
+
+    def finish_request(request, client_address):
+        wrapped = None
+        try:
+            request.settimeout(10)
+            first = request.recv(1, socket.MSG_PEEK)
+            if not first:
+                return
+            if first == b"\x16":
+                wrapped = context.wrap_socket(request, server_side=True)
+                request = wrapped
+            request.settimeout(None)
+        except (OSError, ssl.SSLError):
+            return                          # the browser closed or refused the certificate
+        try:
+            original(request, client_address)
+        finally:
+            if wrapped is not None:
+                try:
+                    wrapped.close()
+                except OSError:
+                    pass
+    server.finish_request = finish_request
+
+
 def _exit_on_sigterm(signum, frame):
     # `docker stop` sends SIGTERM. Python's default would kill us without
     # running `finally` blocks; turning it into SystemExit lets the server loop
@@ -1617,15 +1710,23 @@ def main():
           f"re-queued after restart: {recovered}", flush=True)
     print(f"  database  : {service.db.path}", flush=True)
     signal.signal(signal.SIGTERM, _exit_on_sigterm)
+    # threaded=True: every request (and every open SSE stream) gets its own
+    # thread. One single process: a second one would start a second worker pool.
+    server = make_server(config.HOST, config.PORT, app, threaded=True,
+                         request_handler=FriendlyRequestHandler)
+    context = tls_context()
+    if context is not None:
+        serve_both_protocols(server, context)
+    shown = "127.0.0.1" if config.HOST in ("0.0.0.0", "127.0.0.1") else config.HOST
+    print(f"  open      : http://{shown}:{config.PORT}"
+          + (f"   (https://{shown}:{config.PORT} works too, self-signed certificate)" if context else ""),
+          flush=True)
     try:
-        # threaded=True: every request (and every open SSE stream) gets its own
-        # thread. use_reloader=False: the reloader would start a SECOND process
-        # with a second worker pool.
-        app.run(host=config.HOST, port=config.PORT, threaded=True, use_reloader=False, debug=False,
-                request_handler=FriendlyRequestHandler)
+        server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        server.server_close()
         service.stop()
 
 
