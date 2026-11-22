@@ -55,7 +55,7 @@ export function createLog(listEl, filtersEl, pauseBtn, clearBtn, pausedEl) {
     const t = TYPES[entry.type];
     const time = new Date(entry.ts * 1000);
     const stamp = `${time.toLocaleTimeString([], { hour12: false })}.${String(time.getMilliseconds()).padStart(3, "0")}`;
-    const bad = entry.type === "judge" && ["killed_by_signal", "watchdog_fired", "exec_failed"].includes(entry.data.step);
+    const bad = entry.type === "judge" && ["killed_by_signal", "watchdog_fired", "group_cpu_limit", "exec_failed"].includes(entry.data.step);
     return `<li class="log-line${bad ? " is-bad" : ""}" data-type="${entry.type}"${shown.has(entry.type) ? "" : " hidden"}>
       <span class="log-time mono">${stamp}</span>
       <span class="log-type" data-type="${entry.type}">${icon(t.icon, { size: 12 })}[${t.label}]</span>

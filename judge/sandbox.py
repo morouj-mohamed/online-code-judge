@@ -224,6 +224,40 @@ def _read_vm(pid):
     return {"peak_vm_kb": found.get(b"VmPeak", 0), "peak_hwm_kb": found.get(b"VmHWM", 0)}
 
 
+_CLK_TCK = os.sysconf("SC_CLK_TCK")
+GROUP_CPU_CHECK_S = 0.1      # how often the watchdog adds up the CPU time of a whole process group
+
+
+def _group_cpu_s(pgid):
+    """
+    CPU seconds used so far by EVERY process of a group: user + system time of
+    each member, plus the time of children they already waited for (cutime,
+    cstime). Read from /proc/<pid>/stat fields 14-17 (in clock ticks).
+
+    Why: RLIMIT_CPU is per PROCESS. A fork bomb of 32 processes could burn 32 x
+    the limit and starve other students' programs on the same machine (they
+    would then fail the wall-clock limit through no fault of their own). The
+    watchdog uses this sum to stop the whole group once it has had its share.
+    """
+    ticks = 0
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return 0.0
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/stat", "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+        rest = data[data.rindex(b")") + 2:].split()
+        if len(rest) > 14 and int(rest[2]) == pgid:
+            ticks += int(rest[11]) + int(rest[12]) + int(rest[13]) + int(rest[14])
+    return ticks / _CLK_TCK
+
+
 def group_members(pgid):
     """
     List (pid, state) of every process whose process-group id is `pgid`.
@@ -749,7 +783,7 @@ def _spawn(argv, *, events, label, stdin_path, stdout_path, stderr_path,
                 "pid": pid, "pgid": pid, "wall_s": 0.0, "cpu_s": 0.0, "user_s": 0.0, "sys_s": 0.0,
                 "maxrss_kb": 0, "peak_hwm_kb": None, "peak_vm_kb": None, "exited": False,
                 "exit_code": None, "signal": None, "core_dumped": False, "watchdog_fired": False,
-                "exec_errno": exec_errno, "stray_killed": 0, "orphans_reaped": 0,
+                "group_cpu_exceeded": False, "exec_errno": exec_errno, "stray_killed": 0, "orphans_reaped": 0,
             }
 
         events.emit("exec", pid, label=label, note="execve succeeded (close-on-exec pipe reached end of file)")
@@ -763,6 +797,11 @@ def _spawn(argv, *, events, label, stdin_path, stdout_path, stderr_path,
         spin_until = t_exec + SPIN_SECONDS
         peak_vm = peak_hwm = 0
         fired = False
+        group_cpu_exceeded = False
+        # The whole group may use the CPU limit plus a small grace (the leader's
+        # own RLIMIT_CPU normally ends a single-process program first, with SIGXCPU).
+        cpu_budget = limits.get("cpu_s")
+        next_group_check = t_exec + GROUP_CPU_CHECK_S
         while True:
             if os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None:
                 break
@@ -771,6 +810,15 @@ def _spawn(argv, *, events, label, stdin_path, stdout_path, stderr_path,
                 peak_vm = max(peak_vm, sample["peak_vm_kb"])
                 peak_hwm = max(peak_hwm, sample["peak_hwm_kb"])
             now = time.monotonic()
+            if cpu_budget and not fired and now >= next_group_check:
+                next_group_check = now + GROUP_CPU_CHECK_S
+                used = _group_cpu_s(pid)
+                if used > cpu_budget + 0.5:
+                    fired = group_cpu_exceeded = True
+                    _kill_group(pid)
+                    events.emit("group_cpu_limit", pid, label=label, cpu_s=round(used, 2), budget_s=cpu_budget,
+                                action="SIGKILL sent to the whole process group")
+                    continue
             if not fired and now >= deadline:
                 # The program used too much wall-clock time. SIGKILL cannot be
                 # caught or ignored. Sending it to the group also kills children.
@@ -822,7 +870,8 @@ def _spawn(argv, *, events, label, stdin_path, stdout_path, stderr_path,
             "user_s": usage.ru_utime, "sys_s": usage.ru_stime, "maxrss_kb": usage.ru_maxrss,
             "peak_hwm_kb": peak_hwm or None, "peak_vm_kb": peak_vm or None,
             "exited": exited, "exit_code": exit_code, "signal": term_signal, "core_dumped": core,
-            "watchdog_fired": fired, "exec_errno": None, "stray_killed": len(strays), "orphans_reaped": orphans,
+            "watchdog_fired": fired and not group_cpu_exceeded, "group_cpu_exceeded": group_cpu_exceeded,
+            "exec_errno": None, "stray_killed": len(strays), "orphans_reaped": orphans,
         }
     finally:
         # ---- guaranteed cleanup, also when an exception is in flight --------
@@ -903,7 +952,12 @@ def classify_run(result, eff, as_limit_kb, mem_kb, stderr_head):
             return config.MEMORY_LIMIT_EXCEEDED, "program could not be loaded: its static memory exceeds the limit"
         raise SandboxError(f"execve failed: {os.strerror(result['exec_errno'])}")
 
-    # 1. The watchdog had to kill it.
+    # 1. The watchdog had to kill it: the whole group used too much CPU
+    #    (e.g. a fork bomb: many processes, each under its own RLIMIT_CPU) ...
+    if result.get("group_cpu_exceeded"):
+        return (config.TIME_LIMIT_EXCEEDED,
+                f"the program and the processes it started used more than {eff['time_ms']} ms of CPU time together")
+    #    ... or too much wall-clock time (sleeping, blocked, or starved).
     if result["watchdog_fired"]:
         return (config.TIME_LIMIT_EXCEEDED,
                 f"killed by the watchdog after {result['wall_s']:.2f} s of wall-clock time "

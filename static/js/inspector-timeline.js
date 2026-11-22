@@ -20,6 +20,7 @@ const STEPS = {
   exec: { title: "execve()", explain: "The copy is replaced by the user's program (same PID). The close-on-exec pipe hits end-of-file, which tells the parent exec succeeded." },
   exec_failed: { title: "execve() failed", explain: "The kernel refused to start the program; the child reports errno through the pipe and exits." },
   running: { title: "running", explain: "The program runs. The parent polls with wait4(WNOHANG) and samples /proc/<pid>/status for memory, watching the wall clock." },
+  group_cpu_limit: { title: "group CPU limit", explain: "RLIMIT_CPU counts each process alone, so a fork bomb could burn the limit many times over and slow down everyone else. The watchdog adds up the CPU time of the WHOLE process group from /proc and stops it with killpg(SIGKILL) once the group used its share." },
   watchdog_fired: { title: "watchdog", explain: "The wall-clock limit passed (the program was sleeping or blocked, so RLIMIT_CPU could not stop it): killpg(pgid, SIGKILL)." },
   exited: { title: "exit()", explain: "The program returned from main or called exit(); the low 8 bits of the status are the exit code." },
   killed_by_signal: { title: "killed by a signal", explain: "The kernel terminated the program with a signal (WIFSIGNALED); WTERMSIG says which one." },
@@ -80,6 +81,7 @@ export function createTimeline(listSelect, followBox, target) {
       case "privileges_dropped": return `uid ${d.uid}, euid ${d.euid}, gid ${d.gid}`;
       case "exec_failed": return `${escapeHtml(d.error)} (errno ${d.errno})`;
       case "watchdog_fired": return `wall-clock limit ${d.wall_limit_s} s · ${escapeHtml(d.action)}`;
+      case "group_cpu_limit": return `the group used <b>${d.cpu_s} s</b> of CPU (budget ${d.budget_s} s) · ${escapeHtml(d.action)}`;
       case "exited": return d.exit_code === 0 ? "exit code <b>0</b>" : `exit code <b>${d.exit_code}</b>`;
       case "killed_by_signal": return `<b>${escapeHtml(d.signal)} (${d.number})</b>${SIGNAL_MEANING[d.signal] ? ` — ${SIGNAL_MEANING[d.signal]}` : ""}`;
       case "stray_processes_killed": return `${d.count} process(es): ${escapeHtml((d.pids || []).join(", "))}`;
@@ -105,13 +107,13 @@ export function createTimeline(listSelect, followBox, target) {
       if (!def) continue;
       if (e.step === "exec") execTs = e.ts;
       // The "running" phase sits between exec and the end.
-      if (execTs && ["exited", "killed_by_signal", "watchdog_fired"].includes(e.step) && !rows.some((r) => r.key === "running")) {
+      if (execTs && ["exited", "killed_by_signal", "watchdog_fired", "group_cpu_limit"].includes(e.step) && !rows.some((r) => r.key === "running")) {
         const reaped = run.events.find((x) => x.step === "reaped");
         rows.push({ key: "running", ts: execTs, title: STEPS.running.title, explain: STEPS.running.explain,
           detail: reaped ? `about ${Math.round(reaped.details.wall_ms)} ms on the wall clock` : "" });
       }
       rows.push({ key: e.step, ts: e.ts, title: def.title, explain: def.explain, detail: stepDetail(e, run),
-        tone: e.step === "killed_by_signal" || e.step === "watchdog_fired" || e.step === "exec_failed" ? "bad" : e.step === "exited" && e.details.exit_code !== 0 ? "bad" : "" });
+        tone: e.step === "killed_by_signal" || e.step === "watchdog_fired" || e.step === "group_cpu_limit" || e.step === "exec_failed" ? "bad" : e.step === "exited" && e.details.exit_code !== 0 ? "bad" : "" });
     }
     if (execTs && !run.done && !rows.some((r) => r.key === "running")) {
       rows.push({ key: "running", ts: execTs, title: STEPS.running.title, explain: STEPS.running.explain, detail: "still running…", live: true });

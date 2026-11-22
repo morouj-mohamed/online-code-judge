@@ -28,10 +28,13 @@ CONCEPTS = [
     ("signals", "Signals",
      "Signals are how the kernel (or another process) interrupts a process. RLIMIT_CPU makes the kernel "
      "send SIGXCPU; a bad memory access gives SIGSEGV; division by zero SIGFPE; writing past RLIMIT_FSIZE "
-     "SIGXFSZ. The watchdog uses killpg(pgid, SIGKILL), which cannot be caught or ignored. The parent "
-     "decodes the wait status with WIFEXITED / WIFSIGNALED / WTERMSIG.",
+     "SIGXFSZ. The watchdog uses killpg(pgid, SIGKILL), which cannot be caught or ignored: when the wall "
+     "clock runs out, and when the WHOLE process group has used its CPU share (a fork bomb of many "
+     "processes, each under its own RLIMIT_CPU). The parent decodes the wait status with WIFEXITED / "
+     "WIFSIGNALED / WTERMSIG.",
      [(sandbox._kill_group, "killpg(): SIGKILL to the whole process group"),
       (sandbox._reset_signals, "the child resets signal handlers so the program starts clean"),
+      (sandbox._group_cpu_s, "adds up the CPU time of every process in the group, from /proc"),
       (sandbox.classify_run, "turns 'killed by signal N' into a verdict")]),
     ("resource_limits", "Resource limits",
      "setrlimit() puts hard caps that the KERNEL enforces on a process and its children: CPU seconds, "
