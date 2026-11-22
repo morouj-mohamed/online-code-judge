@@ -188,6 +188,7 @@ All of these also run automatically on every push (GitHub Actions, badge at the 
 | `docker compose exec judge python3 tools/stress.py --plain` | 20 mixed submissions at once, each with its expected verdict |
 
 `TESTING.md` is the manual checklist (100 numbered items) for everything in the user interface.
+`docs/PRESENTATION.md` (Arabic) explains the whole project for a presentation: the OS concepts, every page, a demo script and likely questions.
 
 ## Configuration
 
