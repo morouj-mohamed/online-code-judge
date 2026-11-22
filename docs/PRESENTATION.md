@@ -53,39 +53,40 @@ Accepted ولا Wrong Answer ولا Time Limit ... إلخ.
 ## 2) رحلة submission واحدة (اشرحيها على السبورة أو على الـ Inspector)
 
 ```
-المتصفح ──POST /api/submit──▶ Flask (app.py)
-                                  │  يحفظ صف Pending في SQLite
+Browser ──POST /api/submit──▶ Flask (app.py)
+                                  │  stores a Pending row in SQLite
                                   ▼
-                     BoundedQueue.put(id)      ← producer
+                     BoundedQueue.put(id)                 ← producer
           empty_slots.acquire() → mutex → append → full_slots.release()
                                   │
                                   ▼
-                     Worker thread: queue.get()  ← consumer
-                     UPDATE … WHERE status='Pending'  (worker واحد بس يكسب)
+                     Worker thread: queue.get()           ← consumer
+                     UPDATE … WHERE status='Pending'      (only one worker wins)
                                   │
-             (C/C++) compile في process معزول بحدود
+             (C/C++) compile in its own limited process
                                   │
-                 لكل test:  fork()
+                 for each test:  fork()
                               │ child:
-                              ├─ setsid()                 ← process group جديد
-                              ├─ dup2() test.in → 0, out → 1, err → 2، وقفل الباقي
+                              ├─ setsid()                 ← new process group
+                              ├─ dup2() test.in→0, out→1, err→2; close the rest
                               ├─ setrlimit(CPU, FSIZE, NOFILE, NPROC, CORE)
-                              ├─ chroot(jail)             ← مايشوفش ملفات السيرفر
-                              ├─ setresuid(20000+n)       ← مش root
-                              ├─ setrlimit(RLIMIT_AS)     ← الذاكرة آخر حاجة
-                              └─ execve(program)          ← الـ pipe يتقفل = نجح
+                              ├─ chroot(jail)             ← cannot see the server's files
+                              ├─ setresuid(20000+n)       ← not root any more
+                              ├─ setrlimit(RLIMIT_AS)     ← memory limit last
+                              └─ execve(program)          ← pipe closes = success
                               │ parent:
-                              ├─ watchdog: wall clock + CPU الـ group كله
+                              ├─ watchdog: wall clock + CPU of the whole group
                               ├─ wait4() → exit status + rusage
-                              └─ reap أي orphans
+                              └─ reap any orphans
                                   │
-                  الحكم + المقارنة بالـ expected output
-                  (يوقف عند أول test غلط)
+                  verdict + compare with the expected output
+                  (stops at the first failing test)
                                   │
-               يتخزن في SQLite + EventBroker ──SSE──▶ المتصفح live
+               SQLite + EventBroker ──SSE──▶ the browser, live
 ```
 
 **ترتيب الخطوات مقصود:**
+
 - `setsid` الأول، عشان أي حاجة بعده تبقى في الـ group.
 - `RLIMIT_AS` **آخر حاجة**، لأن نسخة Python (الـ judge نفسه) لسه محتاجة ذاكرة تكمّل بيها الخطوات.
 - `chroot` قبل `setuid`، لأن الـ chroot محتاج root.
@@ -193,6 +194,7 @@ Accepted ولا Wrong Answer ولا Time Limit ... إلخ.
 2. **(1 دقيقة) الطالب:** افتحي مسألة A، اكتبي:
    `a,b=map(int,input().split())` و `print(a+b)` ← **Submit** ← الـ tests بتنور واحدة واحدة ← Accepted + الستيكر.
    قولي: "كل مربع ده process اتعمله fork و execve وقاسه الـ kernel".
+
 3. **(3 دقايق) الـ OS Inspector** (من حساب المدرس):
    - شاوري على الـ **Isolation**: "chroot + uid drop + rlimits + process group".
    - دوسي **Stress test** ← الـ queue تتملي ← "ده producer/consumer بـ semaphores، والـ 3 workers threads".
@@ -225,6 +227,7 @@ Accepted ولا Wrong Answer ولا Time Limit ... إلخ.
 
 **س: الـ fork bomb بيتوقف إزاي؟**
 ج: 4 طبقات:
+
 1. `RLIMIT_NPROC = 32` لكل uid (وكل worker له uid لوحده).
 2. CPU الـ group كله محدود: الـ watchdog بيجمعه من `/proc`.
 3. `killpg()` بيقتل الـ group مرة واحدة.
@@ -256,6 +259,7 @@ Accepted ولا Wrong Answer ولا Time Limit ... إلخ.
 
 **س: جربتوه إزاي؟**
 ج: 4 مجموعات اختبارات أوتوماتيك:
+
 - 26 حكم (كل نوع برنامج + الحلول المرجعية)،
 - 40 للـ concurrency،
 - 103 للـ API،
